@@ -1,6 +1,7 @@
 with "config";
 with "jsonlib";
 with "database";
+with "hostkit";
 
 project Quality_Manager is
    type Boolean_Text is ("false", "true");

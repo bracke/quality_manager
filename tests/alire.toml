@@ -30,5 +30,8 @@ cryptolib = { path = "../../cryptolib" }
 [[pins]]
 database = { path = "../../database" }
 
+[[pins]]
+hostkit = { path = "../../hostkit" }
+
 [build-profiles]
 "*" = "development"

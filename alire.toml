@@ -21,6 +21,9 @@ jsonlib = "*"
 [[depends-on]]
 database = "*"
 
+[[depends-on]]
+hostkit = "*"
+
 [[pins]]
 config = { path = "../config" }
 
@@ -29,6 +32,9 @@ jsonlib = { path = "../jsonlib" }
 
 [[pins]]
 database = { path = "../database" }
+
+[[pins]]
+hostkit = { path = "../hostkit" }
 
 [[pins]]
 representation = { path = "../representation" }

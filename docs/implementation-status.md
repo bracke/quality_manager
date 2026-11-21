@@ -55,3 +55,13 @@ Gate: **implementation and validation passed and committed**. The 11-test suite 
 recoverable journal boundary and confirms that a failed event insert leaves its work item unchanged. Forced validation
 builds and GNATdoc completed. Compiler warnings shown during forced builds originate in the pinned Database and
 Representation dependencies; Quality Manager units compile without warnings.
+
+## Phase 3 — Measurement, reporting, and planning adapters
+
+| Task | State | Evidence |
+| --- | --- | --- |
+| P3-01 bounded process adapter | complete | no-shell argv, environment replacement, deadline/cancellation, bounded output |
+| P3-02 through P3-10 | pending | adapter implementation follows the frozen Phase 0 contracts |
+
+Gate: **in progress**. The process boundary is covered by live subprocess tests; no upstream write operation is
+enabled by this work package.
