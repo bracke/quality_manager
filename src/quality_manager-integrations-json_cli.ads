@@ -3,7 +3,11 @@ with Quality_Manager.Integrations.Processes;
 with Quality_Manager.Results;
 
 package Quality_Manager.Integrations.JSON_CLI is
-   type Exit_Contract is (Ada_Quality_Contract, Summary_Contract, Improve_Contract);
+   type Exit_Contract is
+     (Ada_Quality_Contract,
+      Summary_Contract,
+      Improve_Contract,
+      Model_Runner_Contract);
 
    type Response is record
       Status      : Quality_Manager.Results.Operation_Result;

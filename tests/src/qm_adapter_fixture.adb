@@ -61,6 +61,75 @@ begin
             elsif Text = "database stats" then
                Kind := To_Unbounded_String ("database-statistics");
                Is_Database_Statistics := True;
+            elsif Text = "work capabilities" then
+               Ada.Text_IO.Put
+                 ("{""schema_version"":1,""kind"":""work-capabilities""," &
+                  """noninteractive"":true,""idempotent_operations"":true," &
+                  """operation_lookup"":true,""workspace_isolation"":true," &
+                  """semantic_conflict_resolution"":false,""commands"":" &
+                  "[""inspect"",""execute"",""status"",""cancel"",""recover"",""integrate""]}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
+            elsif Ada.Strings.Fixed.Index (Text, "work cancel ") = 1 then
+               Ada.Text_IO.Put
+                 ("{""schema_version"":1,""kind"":""work-cancellation""," &
+                  """operation_id"":""qm-execution-1"",""task_id"":""TASK-001""," &
+                  """result"":""requested""}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
+            elsif Ada.Strings.Fixed.Index (Text, "work recover ") = 1 then
+               Ada.Text_IO.Put
+                 ("{""schema_version"":1,""kind"":""work-recovery""," &
+                  """project_identity"":""project-identity"",""result"":""reconciled""}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
+            elsif Ada.Strings.Fixed.Index (Text, "work status ") = 1
+              and then Ada.Strings.Fixed.Index (Text, "missing-operation") > 0
+            then
+               Ada.Text_IO.Put
+                 ("{""schema_version"":1,""kind"":""error""," &
+                  """error_code"":""MR-FRAMEWORK-0011"",""diagnostic"":""missing-operation""}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Exit_Status (2));
+               return;
+            elsif Ada.Strings.Fixed.Index (Text, "work inspect ") = 1
+              or else Ada.Strings.Fixed.Index (Text, "work execute ") = 1
+              or else Ada.Strings.Fixed.Index (Text, "work status ") = 1
+              or else Ada.Strings.Fixed.Index (Text, "work integrate ") = 1
+            then
+               declare
+                  Operation : constant String :=
+                    (if Ada.Strings.Fixed.Index (Text, "qm-execution-2") > 0 then "qm-execution-2"
+                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-3") > 0 then "qm-execution-3"
+                     else "qm-execution-1");
+                  Is_Execute : constant Boolean := Ada.Strings.Fixed.Index (Text, "work execute ") = 1;
+                  Is_Integrate : constant Boolean := Ada.Strings.Fixed.Index (Text, "work integrate ") = 1;
+                  Running : constant Boolean := Operation = "qm-execution-2" and then Is_Execute;
+                  Incompatible : constant Boolean := Operation = "qm-execution-3";
+                  Audit : constant String := (if Is_Execute then "execute-audit" else "status-audit");
+               begin
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":1,""kind"":""work-operation""," &
+                     """operation_id"":""" & Operation & """,""project_identity"":""project-identity""," &
+                     """source_fingerprint"":""" &
+                     (if Is_Integrate then "integrated-source" else "source-fingerprint") &
+                     """,""task_id"":""TASK-001""," &
+                     """task_revision"":""task-revision"",""effective_task_revision"":""effective-revision""," &
+                     """execution_policy"":""policy-fingerprint"",""execution_generation"":""1""," &
+                     """execution_state"":""" &
+                     (if Incompatible then "incompatible"
+                      elsif Running then "executing"
+                      elsif Is_Integrate then "completed" else "awaiting_integration") &
+                     """,""native_task_state"":""" & (if Running then "running" else "verification") &
+                     """,""core_state"":""" & (if Running then "running" else "verification") &
+                     """,""ready"":false,""readiness_reasons"":[]," &
+                     """workspace_id"":""" & (if Is_Integrate then "" else "workspace-1") &
+                     """,""workspace_state"":""" & (if Is_Integrate then "integrated" else "active") &
+                     """," &
+                     """result"":""success"",""diagnostics"":[],""audit_reference"":""" & Audit & """," &
+                     """invocation"":""" & To_String (Invocation) & """}");
+               end;
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
             end if;
          end;
          Ada.Text_IO.Put

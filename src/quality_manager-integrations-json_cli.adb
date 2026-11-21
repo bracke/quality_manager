@@ -37,6 +37,18 @@ package body Quality_Manager.Integrations.JSON_CLI is
                when 130    => return Make_Result (Interrupted, "Improve operation was interrupted");
                when others => return Make_Result (Execution_Error, "unknown Improve exit status");
             end case;
+         when Model_Runner_Contract =>
+            case Code is
+               when 0      => return Make_Result (Success);
+               when 2      => return Make_Result (Invalid_Request, "model_runner rejected the request");
+               when 3      => return Make_Result (Execution_Error, "model_runner model execution failed");
+               when 4      => return Make_Result (Incompatible_Contract, "model_runner operation is unsupported");
+               when 5      => return Make_Result (Temporarily_Unavailable, "model_runner resource is unavailable");
+               when 6      => return Make_Result (Negative_Result, "model_runner native work did not succeed");
+               when 7      => return Make_Result (Interrupted, "model_runner operation was interrupted");
+               when 8      => return Make_Result (Execution_Error, "model_runner internal operation failed");
+               when others => return Make_Result (Execution_Error, "unknown model_runner exit status");
+            end case;
       end case;
    end Exit_Result;
 

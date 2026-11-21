@@ -14,9 +14,9 @@
 | P0-08 shared libraries | complete | integration-contracts.md |
 | P0-09 matrix and fixtures | complete | matrix and tests/fixtures/phase0 |
 
-Gate: **contracts frozen and gaps specified in `5605000`**. AQ-ID-01 subsequently passed in Ada Quality `3a85a5b`.
-Native autonomous execution remains disabled until MR-HEADLESS-01 passes. Auto-approval also requires
-IMP-APPROVE-01.
+Gate: **contracts frozen and gaps specified in `5605000`**. AQ-ID-01 subsequently passed in Ada Quality `3a85a5b`,
+and MR-HEADLESS-01 passed in model_runner `a0522e83`. Autonomous approval remains disabled until IMP-APPROVE-01
+passes.
 
 ## Phase 1 — Crate foundation
 
@@ -76,3 +76,48 @@ release checker, and GNATdoc generation. Against a real schema-6 database, asses
 completed with actionable violations and Improve stored `PLAN-000001` revision 1 with exact assessment and project
 provenance. All 13 coordinator tests pass, including valid, missing, and malformed database-identity cases. Versioned
 responses are accepted only when their Summary `report_type` or Improve `command` matches the invoked operation.
+
+## Phase 4 — Headless model_runner support
+
+Repository: model_runner, commit `a0522e83`.
+
+| Task | State | Evidence |
+| --- | --- | --- |
+| P4-01 reusable headless entry | complete | native CLI route wraps `Framework.Work` |
+| P4-02 configured runner reuse | complete | same `Model_Agent` and model initialization as `/work` |
+| P4-03 readiness/effective inspection | complete | exact task and effective fingerprints in work-operation-v1 |
+| P4-04 request/result schema | complete | `docs/headless-work-v1.schema.json` |
+| P4-05 idempotent start | complete | durable operation intent/outcome and mismatch rejection |
+| P4-06 status/cancel/recover | complete | versioned noninteractive commands |
+| P4-07 workspace/integration status | complete | native workspace ID/state and conflict-free authorization |
+| P4-08 native gates | complete | `Work.Execute` and `Work.Take_In`, no parallel engine |
+| P4-09 CLI | complete | `model_runner work` command group |
+| P4-10 tests | complete | AUnit, replay, cancellation, recovery, and real-model exercise |
+
+Gate: **passed and committed**. The full 942-test suite had 941 direct passes and one stale-diagnostic release-gate
+artifact; rebuilding the corrected unit and rerunning that exact gate passed. Validation with warnings as errors
+passed. A real model invocation was recorded as a native failure when its response violated the agent contract, and
+idempotent replay did not invoke it again.
+
+## Phase 5 — Native execution integration
+
+| Task | State | Evidence |
+| --- | --- | --- |
+| P5-01 capabilities handshake | complete | strict required flags and command-set validation |
+| P5-02 inspection/readiness | complete | typed work snapshot and explicit normalized-state decoder |
+| P5-03 task-to-dispatch mapping | complete | exact Improve/native mapping with one active remediation |
+| P5-04 durable requests | complete | operation ID, intent journal, exact identity validation |
+| P5-05 monitoring | complete | durable status lookup and typed outcome reconciliation |
+| P5-06 cancellation/recovery | complete | cancel adapter; invoking restart queries status, never executes |
+| P5-07 workspace status | complete | native workspace identity/state retained |
+| P5-08 integration | complete | conflict-free native integration command only |
+| P5-09 execution/integration leases | complete | fenced project resource lease before journal preparation |
+| P5-10 crash/concurrency tests | complete for coordinator boundary | restart at invoking, replay, stale lease, deduplication |
+
+Gate: **passed**. The 14-test coordinator suite includes an interrupted
+native execution that survives coordinator-store reopen. Recovery observes `status-audit`, proving it queried the
+durable external operation rather than invoking the agent again. A repeated committed operation adopts its existing
+attempt record without reacquiring the project lease or creating duplicate execution state. Native integration has a
+separate fenced lease and journal and advances only to `Awaiting_Assessment`. The warnings-as-errors test run,
+forced validation build, and GNATdoc generation passed. A live `quality-manager doctor` negotiated
+`headless-work-v1` with model_runner `a0522e83` and reported native execution available.

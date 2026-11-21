@@ -7,6 +7,8 @@ with Quality_Manager.Transitions;
 
 package body Quality_Manager.Storage.Records is
    use Quality_Manager.Storage.Schema;
+   use type Quality_Manager.Identities.Attempt_Id;
+   use type Quality_Manager.Model.Outcome_Kind;
 
    function Q (Value : String) return String is
      ('"' & Jsonlib.Serializers.Escape (Value) & '"');
@@ -94,6 +96,34 @@ package body Quality_Manager.Storage.Records is
          Generation => 1);
    begin
       Quality_Manager.Storage.Put (Item, Entity, Result);
+   end Save;
+
+   procedure Save
+     (Item   : in out Quality_Manager.Storage.Store;
+      Value  : Attempt;
+      Result : out Quality_Manager.Results.Operation_Result) is
+      Entity : constant Stored_Entity :=
+        (Internal_Id => 1,
+         Kind => Attempt_Record,
+         Entity_Key => To_Unbounded_String
+           ("attempt:" & Ada.Strings.Fixed.Trim
+              (Quality_Manager.Identities.Attempt_Id'Image (Value.Attempt), Ada.Strings.Both)),
+         State => To_Unbounded_String (Quality_Manager.Model.Outcome_Kind'Image (Value.Outcome)),
+         Payload => To_Unbounded_String
+           ("{""dispatch_id"":" & Q (To_String (Value.Dispatch_Id))
+            & ",""execution_identity"":" & Q (To_String (Value.Execution_Identity))
+            & ",""started_at"":" & Q (Sequence_Number'Image (Value.Started_At))
+            & ",""finished_at"":" & Q (Sequence_Number'Image (Value.Finished_At))
+            & ",""timeout_seconds"":" & N (Value.Timeout_Seconds) & "}"),
+         Terminal => Value.Outcome /= Quality_Manager.Model.No_Outcome,
+         Generation => 1);
+   begin
+      if Value.Attempt = 0 then
+         Result := Quality_Manager.Results.Make_Result
+           (Quality_Manager.Results.Invalid_Request, "attempt identity must be positive", "qm.attempt.identity");
+      else
+         Quality_Manager.Storage.Put (Item, Entity, Result);
+      end if;
    end Save;
 
    procedure Save

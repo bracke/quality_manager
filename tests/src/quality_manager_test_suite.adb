@@ -9,11 +9,13 @@ with AUnit.Test_Caller;
 
 with Quality_Manager.CLI;
 with Quality_Manager.Config;
+with Quality_Manager.Dispatch;
 with Quality_Manager.Identities;
 with Quality_Manager.Integrations.Processes;
 with Quality_Manager.Integrations.JSON_CLI;
 with Quality_Manager.Integrations.Improve;
 with Quality_Manager.Integrations.Quality;
+with Quality_Manager.Integrations.Runner;
 with Quality_Manager.Integrations.Summary;
 with Quality_Manager.Journal;
 with Quality_Manager.Model;
@@ -30,6 +32,8 @@ package body Quality_Manager_Test_Suite is
    use type Quality_Manager.Results.Result_Kind;
    use type Quality_Manager.Journal.Recovery_Action;
    use type Quality_Manager.Storage.Record_Kind;
+   use type Quality_Manager.Integrations.Runner.Execution_State;
+   use type Quality_Manager.Model.Work_State;
 
    package Caller is new AUnit.Test_Caller (Fixture);
 
@@ -77,6 +81,10 @@ package body Quality_Manager_Test_Suite is
       Write_Text ("[unknown]" & ASCII.LF & "key = true" & ASCII.LF);
       Quality_Manager.Config.Load (Base_Path, True, Settings, Result);
       Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "unknown key is rejected");
+
+      Write_Text ("[integrations]" & ASCII.LF & "model_runner = """"" & ASCII.LF);
+      Quality_Manager.Config.Load (Base_Path, True, Settings, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "empty model_runner executable is rejected");
 
       Write_Text ("[scheduler" & ASCII.LF);
       Quality_Manager.Config.Load (Base_Path, True, Settings, Result);
@@ -167,14 +175,16 @@ package body Quality_Manager_Test_Suite is
    procedure Test_Doctor_Output (Item : in out Fixture) is
       pragma Unreferenced (Item);
       Settings : constant Quality_Manager.Config.Settings := Quality_Manager.Config.Defaults;
+      Runner   : constant Quality_Manager.Results.Operation_Result :=
+        Quality_Manager.Results.Make_Result (Quality_Manager.Results.Success);
       Output   : constant String := Quality_Manager.Reporting.Doctor
-        (Settings, Quality_Manager.CLI.JSON_Output);
+        (Settings, Quality_Manager.CLI.JSON_Output, Runner);
       Result   : Quality_Manager.Results.Operation_Result;
    begin
       Quality_Manager.Schemas.Validate_Versioned_JSON (Output, 1, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success, "doctor JSON is versioned JSON");
-      Assert (Ada.Strings.Fixed.Index (Output, """write_coordination"": ""disabled""") > 0,
-              "doctor reports write fencing");
+      Assert (Ada.Strings.Fixed.Index (Output, """native_execution"": ""available""") > 0,
+              "doctor reports the negotiated native execution contract");
    end Test_Doctor_Output;
 
    procedure Test_Identities (Item : in out Fixture) is
@@ -560,6 +570,7 @@ package body Quality_Manager_Test_Suite is
          Quality_Adapter : Quality_Manager.Integrations.Quality.Adapter;
          Summary_Adapter : Quality_Manager.Integrations.Summary.Adapter;
          Improve_Adapter : Quality_Manager.Integrations.Improve.Adapter;
+         Runner_Adapter  : Quality_Manager.Integrations.Runner.Adapter;
          Database_Identity : Unbounded_String;
          Identity_Result : Quality_Manager.Results.Operation_Result;
       begin
@@ -639,8 +650,248 @@ package body Quality_Manager_Test_Suite is
             and then Ada.Strings.Fixed.Index
               (To_String (Response.Document), "verify --project 7 --revision 2 --run 4") > 0,
             "Improve project verification binds plan revision and assessment");
+
+         Quality_Manager.Integrations.Runner.Initialize
+           (Runner_Adapter, "./bin/qm_adapter_fixture");
+         Quality_Manager.Integrations.Runner.Capabilities (Runner_Adapter, Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success,
+            "model_runner required headless capabilities are negotiated");
+
+         declare
+            Request  : Quality_Manager.Integrations.Runner.Execution_Request :=
+              (Project_Path                => To_Unbounded_String ("/project"),
+               Task_Id                     => To_Unbounded_String ("TASK-001"),
+               Operation_Id                => To_Unbounded_String ("qm-execution-1"),
+               Expected_Task_Revision      => To_Unbounded_String ("task-revision"),
+               Expected_Project_Identity   => To_Unbounded_String ("project-identity"),
+               Expected_Source_Fingerprint => To_Unbounded_String ("source-fingerprint"),
+               Execution_Policy            => To_Unbounded_String ("policy-fingerprint"),
+               Timeout_Seconds             => 60);
+            Snapshot : Quality_Manager.Integrations.Runner.Task_Snapshot;
+            Checked  : Quality_Manager.Results.Operation_Result;
+         begin
+            Quality_Manager.Integrations.Runner.Execute (Runner_Adapter, Request, Response);
+            Assert
+              (Response.Status.Kind = Quality_Manager.Results.Success
+               and then Ada.Strings.Fixed.Index
+                 (To_String (Response.Document), "--operation-id qm-execution-1") > 0
+               and then Ada.Strings.Fixed.Index
+                 (To_String (Response.Document), "--noninteractive") > 0,
+               "native execution binds the durable operation and is noninteractive");
+            Quality_Manager.Integrations.Runner.Decode_Snapshot (Response, Snapshot, Checked);
+            Assert
+              (Checked.Kind = Quality_Manager.Results.Success
+               and then Snapshot.State =
+                 Quality_Manager.Integrations.Runner.Awaiting_Integration_State,
+               "native state is explicitly normalized");
+            Quality_Manager.Integrations.Runner.Validate_Execution (Snapshot, Request, Checked);
+            Assert
+              (Checked.Kind = Quality_Manager.Results.Success,
+               "native outcome retains exact dispatch identities");
+
+            Request.Expected_Source_Fingerprint := To_Unbounded_String ("changed-source");
+            Quality_Manager.Integrations.Runner.Validate_Execution (Snapshot, Request, Checked);
+            Assert
+              (Checked.Kind = Quality_Manager.Results.Stale_Evidence,
+               "changed source invalidates the native dispatch");
+
+            Request.Expected_Source_Fingerprint := To_Unbounded_String ("source-fingerprint");
+            Request.Operation_Id := To_Unbounded_String ("qm-execution-3");
+            Quality_Manager.Integrations.Runner.Execute (Runner_Adapter, Request, Response);
+            Quality_Manager.Integrations.Runner.Decode_Snapshot (Response, Snapshot, Checked);
+            Assert
+              (Checked.Kind = Quality_Manager.Results.Incompatible_Contract,
+               "unknown or explicitly incompatible native state fails closed");
+         end;
+
+         Quality_Manager.Integrations.Runner.Status
+           (Runner_Adapter, "/project", "qm-execution-1", Response);
+         Assert (Response.Status.Kind = Quality_Manager.Results.Success, "native status is queryable");
+         Quality_Manager.Integrations.Runner.Status
+           (Runner_Adapter, "/project", "missing-operation", Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Not_Found,
+            "native error code is normalized independently of its process exit class");
+         Quality_Manager.Integrations.Runner.Cancel
+           (Runner_Adapter, "/project", "qm-execution-1", Response);
+         Assert (Response.Status.Kind = Quality_Manager.Results.Success, "native cancellation is exposed");
+         Quality_Manager.Integrations.Runner.Recover (Runner_Adapter, "/project", Response);
+         Assert (Response.Status.Kind = Quality_Manager.Results.Success, "native recovery is exposed");
+         Quality_Manager.Integrations.Runner.Integrate
+           (Runner_Adapter, "/project", "qm-execution-1", Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index
+              (To_String (Response.Document), "--authorization conflict-free") > 0,
+            "integration is restricted to the conflict-free native gate");
       end;
    end Test_JSON_CLI_Contracts;
+
+   procedure Test_Native_Dispatch (Item : in out Fixture) is
+      pragma Unreferenced (Item);
+      Path     : constant String := "/tmp/quality-manager-native-dispatch.database";
+      Store    : Quality_Manager.Storage.Store;
+      Runner   : Quality_Manager.Integrations.Runner.Adapter;
+      Result   : Quality_Manager.Results.Operation_Result;
+      Snapshot : Quality_Manager.Integrations.Runner.Task_Snapshot;
+      Loaded   : Quality_Manager.Storage.Stored_Entity;
+      Request  : constant Quality_Manager.Integrations.Runner.Execution_Request :=
+        (Project_Path                => To_Unbounded_String ("/project"),
+         Task_Id                     => To_Unbounded_String ("TASK-001"),
+         Operation_Id                => To_Unbounded_String ("qm-execution-1"),
+         Expected_Task_Revision      => To_Unbounded_String ("task-revision"),
+         Expected_Project_Identity   => To_Unbounded_String ("project-identity"),
+         Expected_Source_Fingerprint => To_Unbounded_String ("source-fingerprint"),
+         Execution_Policy            => To_Unbounded_String ("policy-fingerprint"),
+         Timeout_Seconds             => 60);
+      Mapping  : constant Quality_Manager.Storage.Schema.Dispatch :=
+        (Dispatch_Id         => To_Unbounded_String ("dispatch:runner"),
+         Work_Id             => To_Unbounded_String ("work:runner"),
+         Logical_Remediation => To_Unbounded_String ("remediation:runner"),
+         Improve_Task        =>
+           (Plan_Id  => To_Unbounded_String ("PLAN-001"),
+            Revision => 1,
+            Task_Id  => To_Unbounded_String ("IMP-001")),
+         Native_Task_Id      => To_Unbounded_String ("TASK-001"),
+         Authorization_Id    => To_Unbounded_String ("approval-1"),
+         State               => Quality_Manager.Model.Published,
+         Active              => True);
+
+      procedure Cleanup is
+      begin
+         if Ada.Directories.Exists (Path) then
+            Ada.Directories.Delete_File (Path);
+         end if;
+      end Cleanup;
+   begin
+      Cleanup;
+      Quality_Manager.Storage.Open (Store, Path, True, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "native dispatch store opened");
+      Quality_Manager.Dispatch.Bind_Published_Task (Store, Mapping, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "published native mapping retained exactly");
+      Quality_Manager.Integrations.Runner.Initialize (Runner, "./bin/qm_adapter_fixture");
+
+      Quality_Manager.Dispatch.Execute_Or_Reconcile
+        (Store                     => Store,
+         Runner                    => Runner,
+         Operation                 => 1,
+         Dispatch_Id               => "dispatch:runner",
+         Project_Resource          => "project:runner:execution",
+         Lease_Owner               => "coordinator:test",
+         Expected_Lease_Generation => 0,
+         New_Lease_Generation      => 1,
+         Lease_Expires_At          => 100,
+         Request                   => Request,
+         Snapshot                  => Snapshot,
+         Result                    => Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Snapshot.State = Quality_Manager.Integrations.Runner.Awaiting_Integration_State,
+         "native execution is journaled and independently awaits integration");
+      Quality_Manager.Storage.Read (Store, "journal:1", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Loaded.State) = Quality_Manager.Journal.Journal_State'Image
+           (Quality_Manager.Journal.Committed),
+         "confirmed native outcome commits the durable journal");
+      Quality_Manager.Storage.Read (Store, "attempt:1", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Loaded.Kind = Quality_Manager.Storage.Attempt_Record,
+         "native attempt outcome is persisted");
+
+      Quality_Manager.Dispatch.Execute_Or_Reconcile
+        (Store                     => Store,
+         Runner                    => Runner,
+         Operation                 => 1,
+         Dispatch_Id               => "dispatch:runner",
+         Project_Resource          => "project:runner:execution",
+         Lease_Owner               => "coordinator:test",
+         Expected_Lease_Generation => 0,
+         New_Lease_Generation      => 1,
+         Lease_Expires_At          => 100,
+         Request                   => Request,
+         Snapshot                  => Snapshot,
+         Result                    => Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success,
+         "repeated coordinator recovery adopts status without another execution");
+
+      Quality_Manager.Dispatch.Integrate_Or_Reconcile
+        (Store                     => Store,
+         Runner                    => Runner,
+         Journal_Operation         => 100,
+         Project_Resource          => "project:runner:integration",
+         Lease_Owner               => "coordinator:test",
+         Expected_Lease_Generation => 0,
+         New_Lease_Generation      => 1,
+         Lease_Expires_At          => 100,
+         Request                   => Request,
+         Snapshot                  => Snapshot,
+         Result                    => Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Snapshot.Workspace_State) = "integrated"
+         and then Quality_Manager.Dispatch.Coordinator_State (Snapshot.State) =
+           Quality_Manager.Model.Awaiting_Assessment,
+         "native integration is separately leased, journaled, and awaiting independent assessment");
+      Quality_Manager.Storage.Read (Store, "journal:100", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Loaded.State) = Quality_Manager.Journal.Journal_State'Image
+           (Quality_Manager.Journal.Committed),
+         "confirmed native integration commits its own durable journal");
+
+      declare
+         Recovery_Request : Quality_Manager.Integrations.Runner.Execution_Request := Request;
+      begin
+         Recovery_Request.Operation_Id := To_Unbounded_String ("qm-execution-2");
+         Quality_Manager.Dispatch.Execute_Or_Reconcile
+           (Store                     => Store,
+            Runner                    => Runner,
+            Operation                 => 2,
+            Dispatch_Id               => "dispatch:runner",
+            Project_Resource          => "project:runner:recovery",
+            Lease_Owner               => "coordinator:test",
+            Expected_Lease_Generation => 0,
+            New_Lease_Generation      => 1,
+            Lease_Expires_At          => 100,
+            Request                   => Recovery_Request,
+            Snapshot                  => Snapshot,
+            Result                    => Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Not_Ready,
+            "running native operation remains at the invoking recovery boundary");
+         Quality_Manager.Storage.Close (Store, Result);
+         Quality_Manager.Storage.Open (Store, Path, True, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "dispatch store reopened after interruption");
+         Quality_Manager.Dispatch.Execute_Or_Reconcile
+           (Store                     => Store,
+            Runner                    => Runner,
+            Operation                 => 2,
+            Dispatch_Id               => "dispatch:runner",
+            Project_Resource          => "project:runner:recovery",
+            Lease_Owner               => "coordinator:test",
+            Expected_Lease_Generation => 0,
+            New_Lease_Generation      => 1,
+            Lease_Expires_At          => 100,
+            Request                   => Recovery_Request,
+            Snapshot                  => Snapshot,
+            Result                    => Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then To_String (Snapshot.Audit_Reference) = "status-audit",
+            "restart queries durable status instead of executing the agent again");
+      end;
+      Quality_Manager.Storage.Close (Store, Result);
+      Cleanup;
+   exception
+      when others =>
+         Quality_Manager.Storage.Close (Store, Result);
+         Cleanup;
+         raise;
+   end Test_Native_Dispatch;
 
    function Suite return AUnit.Test_Suites.Access_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
@@ -658,6 +909,7 @@ package body Quality_Manager_Test_Suite is
       Result.Add_Test (Caller.Create ("corrupt storage", Test_Corrupt_Storage'Access));
       Result.Add_Test (Caller.Create ("bounded process adapter", Test_Process_Adapter'Access));
       Result.Add_Test (Caller.Create ("JSON CLI contracts", Test_JSON_CLI_Contracts'Access));
+      Result.Add_Test (Caller.Create ("durable native dispatch", Test_Native_Dispatch'Access));
       return Result;
    end Suite;
 end Quality_Manager_Test_Suite;

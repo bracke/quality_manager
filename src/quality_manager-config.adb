@@ -26,6 +26,7 @@ package body Quality_Manager.Config is
    Allowed_Keys : constant array (Positive range <>) of Unbounded_String :=
      [To_Unbounded_String ("coordinator.database"),
       To_Unbounded_String ("quality.database"),
+      To_Unbounded_String ("integrations.model_runner"),
       To_Unbounded_String ("scheduler.assessment_workers"),
       To_Unbounded_String ("scheduler.agent_workers"),
       To_Unbounded_String ("scheduler.maximum_task_seconds"),
@@ -35,6 +36,7 @@ package body Quality_Manager.Config is
    function Defaults return Settings is
      (Coordinator_Database => To_Unbounded_String ("var/quality-manager.db"),
       Quality_Database     => Null_Unbounded_String,
+      Model_Runner_Executable => To_Unbounded_String ("model_runner"),
       Assessment_Workers   => 4,
       Agent_Workers        => 1,
       Maximum_Task_Seconds => 3_600,
@@ -293,6 +295,18 @@ package body Quality_Manager.Config is
       begin
          Item.Quality_Database :=
            (if Value'Length = 0 then Null_Unbounded_String else To_Unbounded_String (Normalize_Path (Value)));
+      end;
+
+      declare
+         Value : constant String := External_Reader.Get_String
+           (Store, "integrations.model_runner", To_String (Item.Model_Runner_Executable));
+      begin
+         if Value'Length = 0 then
+            Result := Make_Result
+              (Invalid_Request, "integrations.model_runner must not be empty", "qm.config.empty-executable");
+            return;
+         end if;
+         Item.Model_Runner_Executable := To_Unbounded_String (Value);
       end;
 
       External_Reader.Get_Integer (Store, "scheduler.assessment_workers", Integer_Val, Status);

@@ -16,8 +16,14 @@ immutable revision.
 | cryptolib | 0.1.0-dev | 2e5c415f65fd49c2a496c97813740fa9b83e02fa | inspected | hashes/signatures | compatible |
 | versionlib | 0.1.0-dev | 71c02ed2f6b6c4fa693715e6306fa2eb98b79fec | inspected | Git | compatible |
 
-Post-freeze contract implementation: Ada Quality commit `3a85a5b` implements AQ-ID-01 with logical schema version 6
-and `database-statistics` JSON schema version 2. The frozen inspection row above remains the provenance baseline.
+Post-freeze contract implementations:
+
+- Ada Quality commit `3a85a5b` implements AQ-ID-01 with logical schema version 6 and `database-statistics` JSON
+  schema version 2.
+- model_runner commit `a0522e83cf42fe2b8cf95e5e73759c0d7aa5087b` implements MR-HEADLESS-01 and
+  `headless-work-v1`.
+
+The frozen inspection rows above remain the provenance baseline.
 
 ## Contract checks
 
@@ -39,3 +45,7 @@ AQ-ID-01 was subsequently validated with Ada Quality's warnings-as-errors build,
 GNATdoc generation, and refreshed production coverage of 90.03%. A real schema-6 database then supplied a durable
 identity to the coordinator adapter and assessment 1 for `quality_manager`; Improve stored `PLAN-000001` revision 1
 from that exact database-qualified assessment.
+
+MR-HEADLESS-01 was subsequently validated with the full model_runner suite, warnings-as-errors build, real local-model
+execution, idempotent replay, cross-process cancellation, and native recovery. Quality Manager requires and validates
+the exact capability flags and command set before dispatch.

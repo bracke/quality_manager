@@ -67,8 +67,16 @@ The public framework confirms Tasks.Ready, Tasks.Effective, Work.Plan_For, Work.
 Work.Recover, and Work.Audit. Execute preserves permission, workspace, code-health, lifecycle, and completion gates.
 Interactive /work supplies the configured model-backed Agent_Runner.
 
-Gap **MR-HEADLESS-01**: the executable has no work command, durable coordinator operation ID, JSON schema, or restart
-lookup. Phase 4 must wrap the existing runner and framework. Repeating one operation ID must never start a second run.
+**MR-HEADLESS-01 implemented:** model_runner commit `a0522e83` adds schema-versioned `work capabilities`, `inspect`,
+`execute`, `status`, `cancel`, `recover`, and `integrate` commands over the existing native engine. Execution binds a
+durable operation ID to the exact task revision, project identity, source fingerprint, and execution policy.
+Identical requests adopt the recorded operation; mismatched reuse is rejected. An invoking operation without a
+confirmed outcome reports reconciliation instead of starting a second agent.
+
+The coordinator requires noninteractive, idempotent-operation, operation-lookup, and isolated-workspace capabilities.
+It rejects semantic-conflict resolution and unknown native normalized states. Native success advances only to
+independent assessment; it never certifies quality. Conflict-free integration continues through
+`Framework.Work.Take_In` and requires the native authorization gate.
 
 ## Shared libraries
 

@@ -5,6 +5,8 @@ with Ada.Text_IO;
 with Quality_Manager;
 with Quality_Manager.CLI;
 with Quality_Manager.Config;
+with Quality_Manager.Integrations.JSON_CLI;
+with Quality_Manager.Integrations.Runner;
 with Quality_Manager.Reporting;
 with Quality_Manager.Results;
 
@@ -41,6 +43,18 @@ begin
             Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
             return;
          end if;
-         Ada.Text_IO.Put_Line (Quality_Manager.Reporting.Doctor (Settings, Options.Format));
+         declare
+            Runner   : Quality_Manager.Integrations.Runner.Adapter;
+            Response : Quality_Manager.Integrations.JSON_CLI.Response;
+         begin
+            Quality_Manager.Integrations.Runner.Initialize
+              (Runner, To_String (Settings.Model_Runner_Executable));
+            Quality_Manager.Integrations.Runner.Capabilities (Runner, Response);
+            Ada.Text_IO.Put_Line
+              (Quality_Manager.Reporting.Doctor (Settings, Options.Format, Response.Status));
+            if Response.Status.Kind /= Quality_Manager.Results.Success then
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+            end if;
+         end;
    end case;
 end Main;

@@ -4,6 +4,9 @@ database = "var/quality-manager.db"
 [quality]
 database = ""
 
+[integrations]
+model_runner = "../model_runner/bin/model_runner"
+
 [scheduler]
 assessment_workers = 4
 agent_workers = 1

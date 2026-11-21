@@ -36,7 +36,10 @@ Add versioned JSON commands:
 
     model_runner work capabilities --format json
     model_runner work inspect --project PATH --task TASK-ID --format json
-    model_runner work execute --request FILE --format json
+    model_runner work execute --project PATH --task TASK-ID --operation-id ID \
+      --expected-task-revision DIGEST --expected-project-identity ID \
+      --expected-source-fingerprint DIGEST --execution-policy DIGEST \
+      --timeout-seconds N --noninteractive --format json
     model_runner work status --project PATH --operation-id ID --format json
     model_runner work cancel --project PATH --operation-id ID --format json
     model_runner work recover --project PATH --format json
@@ -45,3 +48,11 @@ Reuse the interactive command’s configured model-backed Agent_Runner and exist
 operation ID before execution and bind it to project identity, task revision, generation, agent/invocation IDs, and
 final report. Identical requests adopt the operation; mismatched reuse is an integrity error. Lookup survives restart.
 Semantic conflict acceptance remains disabled noninteractively.
+
+Status: **implemented and validated** in model_runner commit `a0522e83`. The adapter reuses the interactive route's
+configured `Agent_Runner`, native workspaces, cancellation, recovery, integration, and code-health gates. A real local
+model execution traversed the headless route; its invalid agent response was retained as a native failure. Repeating
+the same operation returned the same generation and outcome without another model execution. Cross-process
+cancellation and recovery also passed. The full suite ran 942 tests; the single initially reported release-gate
+failure was a stale compiler diagnostic artifact, and the isolated release gate passed after the corrected unit was
+rebuilt. The warnings-as-errors validation build passed.
