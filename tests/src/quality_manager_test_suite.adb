@@ -568,9 +568,27 @@ package body Quality_Manager_Test_Suite is
          Quality_Manager.Integrations.Quality.Resolve_Database_Identity
            (Quality_Adapter, Database_Identity, Identity_Result);
          Assert
+           (Identity_Result.Kind = Quality_Manager.Results.Success
+            and then To_String (Database_Identity) = "123e4567-e89b-12d3-a456-426614174000",
+            "Ada Quality durable database identity is validated and retained");
+         Quality_Manager.Integrations.Quality.Initialize
+           (Quality_Adapter, "./bin/qm_adapter_fixture", "missing-identity.db");
+         Quality_Manager.Integrations.Quality.Resolve_Database_Identity
+           (Quality_Adapter, Database_Identity, Identity_Result);
+         Assert
            (Identity_Result.Kind = Quality_Manager.Results.Incompatible_Contract
             and then Length (Database_Identity) = 0,
-            "missing durable Ada Quality database identity fails closed");
+            "missing Ada Quality database identity fails closed");
+         Quality_Manager.Integrations.Quality.Initialize
+           (Quality_Adapter, "./bin/qm_adapter_fixture", "invalid-identity.db");
+         Quality_Manager.Integrations.Quality.Resolve_Database_Identity
+           (Quality_Adapter, Database_Identity, Identity_Result);
+         Assert
+           (Identity_Result.Kind = Quality_Manager.Results.Incompatible_Contract
+            and then Length (Database_Identity) = 0,
+            "noncanonical Ada Quality database identity fails closed");
+         Quality_Manager.Integrations.Quality.Initialize
+           (Quality_Adapter, "./bin/qm_adapter_fixture", "quality.db");
          Quality_Manager.Integrations.Quality.List_Projects (Quality_Adapter, Response);
          Assert
            (Response.Status.Kind = Quality_Manager.Results.Success

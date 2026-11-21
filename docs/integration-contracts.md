@@ -20,13 +20,11 @@ Assessment JSON binds project/run IDs, path, source, policy, toolchain, terminal
 executions. Exit 0 means complete/pass, 1 complete/violations, 2 invalid request, 3 incomplete evidence, and 4
 database/integrity failure. JSON, not exit status or terminal prose, is authoritative.
 
-Gap **AQ-ID-01**: no stable database installation identity is exposed. Snapshot_Identity changes with contents and a
-canonical path does not detect replacement. Coordinator writes remain disabled until Ada Quality exposes a durable
-database UUID/fingerprint through reporting and JSON.
-
-The Phase 3 adapter implements that fence explicitly: resolving the database identity returns
-`Incompatible_Contract` and no identity. It never promotes the mutable snapshot digest or configured path into a
-qualified project key.
+**AQ-ID-01 implemented:** Ada Quality schema version 6 stores a canonical non-nil UUID in its metadata row and exposes
+it through `Ada_Quality.Reporting.Database_Identity` and `database stats --format json` schema version 2. Commit
+`3a85a5b` adds atomic migration from versions 1 through 5 and proves identity stability across reopen and distinction
+between independent stores. The coordinator validates canonical UUID syntax and still fails closed for a missing,
+nil, malformed, or unsupported identity; it never substitutes a path or mutable snapshot digest.
 
 ## Ada Quality Summary
 

@@ -5,7 +5,7 @@
 | Task | State | Evidence |
 | --- | --- | --- |
 | P0-01 revisions and versions | complete | compatibility matrix |
-| P0-02 Ada Quality contracts | complete with AQ-ID-01 | source, schemas, fixture |
+| P0-02 Ada Quality contracts | complete; AQ-ID-01 implemented | source, schemas, fixture, Ada Quality `3a85a5b` |
 | P0-03 Summary semantics | complete with AQS-PAGE-01 | source, schemas, fixture |
 | P0-04 Improve contracts | complete with IMP-APPROVE-01 | CLI/parser/operations source |
 | P0-05 /work trace | complete | CLI route → CLI.Work.Run_With → Framework.Work.Execute |
@@ -14,9 +14,9 @@
 | P0-08 shared libraries | complete | integration-contracts.md |
 | P0-09 matrix and fixtures | complete | matrix and tests/fixtures/phase0 |
 
-Gate: **gaps specified and committed as `5605000`; upstream test baselines blocked**. Read-only foundation may
-proceed. Write-producing autonomous workflows remain disabled until AQ-ID-01 and MR-HEADLESS-01 pass. Auto-approval
-also requires IMP-APPROVE-01.
+Gate: **contracts frozen and gaps specified in `5605000`**. AQ-ID-01 subsequently passed in Ada Quality `3a85a5b`.
+Native autonomous execution remains disabled until MR-HEADLESS-01 passes. Auto-approval also requires
+IMP-APPROVE-01.
 
 ## Phase 1 — Crate foundation
 
@@ -61,8 +61,8 @@ Representation dependencies; Quality Manager units compile without warnings.
 | Task | State | Evidence |
 | --- | --- | --- |
 | P3-01 bounded process adapter | complete | no-shell argv, environment replacement, deadline/cancellation, bounded output |
-| P3-02 inventory and assessment | complete, identity-fenced | exact Ada Quality project/check/assessment commands |
-| P3-03 identity and freshness | blocked by AQ-ID-01 | adapter fails closed when durable database identity is unavailable |
+| P3-02 inventory and assessment | complete | exact Ada Quality project/check/assessment commands |
+| P3-03 identity and freshness | complete | schema-6 UUID contract; canonical UUID validation and fail-closed tests |
 | P3-04 exact comparison | complete | explicit `assessment diff BASE CURRENT` invocation |
 | P3-05 Summary reports | complete | version-1 summary/problems/regressions/indicators/trends/project adapters |
 | P3-06 planning and revision inspection | complete | version-2 plan/create/show exact-revision adapters |
@@ -71,8 +71,8 @@ Representation dependencies; Quality Manager units compile without warnings.
 | P3-09 task and project verification | complete | task/project verification requires exact revision and assessment |
 | P3-10 compatibility/error tests | complete for coordinator adapters | exit classes, UTF-8, schema, discriminator, command construction |
 
-Gate: **blocked at the cross-repository acceptance scenario**. All 13 coordinator tests pass with warnings treated as
-errors. Versioned responses are accepted only when their Summary `report_type` or Improve `command` matches the
-invoked operation. The required actual-violation → Improve-plan scenario remains disabled because Ada Quality cannot
-yet qualify a project with a durable database identity. This session's filesystem profile permits writes only in
-`quality_manager`, so AQ-ID-01 could not be applied to the sibling repository; no path-derived substitute was added.
+Gate: **passed**. Ada Quality commit `3a85a5b` passed its validation build, 59/59 tests, 90.03% production coverage,
+release checker, and GNATdoc generation. Against a real schema-6 database, assessment 1 for `quality_manager`
+completed with actionable violations and Improve stored `PLAN-000001` revision 1 with exact assessment and project
+provenance. All 13 coordinator tests pass, including valid, missing, and malformed database-identity cases. Versioned
+responses are accepted only when their Summary `report_type` or Improve `command` matches the invoked operation.

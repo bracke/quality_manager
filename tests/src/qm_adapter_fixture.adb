@@ -20,7 +20,9 @@ begin
          Invocation : Unbounded_String;
          Command     : Unbounded_String;
          Kind        : Unbounded_String;
+         Database_Path : Unbounded_String;
          Has_State  : Boolean := False;
+         Is_Database_Statistics : Boolean := False;
          Index      : Positive := 1;
       begin
          while Index <= Ada.Command_Line.Argument_Count loop
@@ -28,7 +30,10 @@ begin
                Argument : constant String := Ada.Command_Line.Argument (Index);
             begin
                if Argument = "--state" then Has_State := True; end if;
-               if Argument in "--database" | "--format" | "--config" | "--state" then
+               if Argument = "--database" then
+                  Database_Path := To_Unbounded_String (Ada.Command_Line.Argument (Index + 1));
+                  Index := Index + 2;
+               elsif Argument in "--format" | "--config" | "--state" then
                   Index := Index + 2;
                else
                   if Length (Command) = 0 then
@@ -53,13 +58,21 @@ begin
                Kind := To_Unbounded_String ("assessment-comparison");
             elsif Ada.Strings.Fixed.Index (Text, "doctor ") = 1 then
                Kind := To_Unbounded_String ("doctor-report");
+            elsif Text = "database stats" then
+               Kind := To_Unbounded_String ("database-statistics");
+               Is_Database_Statistics := True;
             end if;
          end;
          Ada.Text_IO.Put
-           ("{""schema_version"":" & (if Has_State then "2" else "1")
+           ("{""schema_version"":" & (if Has_State or else Is_Database_Statistics then "2" else "1")
             & ",""command"":""" & To_String (Command) & """"
             & ",""report_type"":""" & To_String (Command) & """"
             & ",""kind"":""" & To_String (Kind) & """"
+            & (if Is_Database_Statistics and then To_String (Database_Path) = "quality.db"
+               then ",""database_identity"":""123e4567-e89b-12d3-a456-426614174000"""
+               elsif Is_Database_Statistics and then To_String (Database_Path) = "invalid-identity.db"
+               then ",""database_identity"":""not-a-uuid"""
+               else "")
             & ",""invocation"":""" & To_String (Invocation) & """}");
       end;
    elsif Ada.Command_Line.Argument_Count >= 2 and then Ada.Command_Line.Argument (2) = "invalid-utf8" then

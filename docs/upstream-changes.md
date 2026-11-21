@@ -11,6 +11,10 @@ Implementation design validated against the current schema: migrate to schema ve
 from `Snapshot_Identity`. Migration must create the UUID and advance the schema in one transaction. Read-only
 reporting must validate canonical UUID syntax and never generate or repair an identity.
 
+Status: **implemented and validated** in Ada Quality commit `3a85a5b`. The public reporting API and
+`database-statistics` JSON v2 expose the UUID. Atomic migration, reopen stability, independent-store distinction,
+schema rejection, full tests, 90.03% coverage, release checking, and GNATdoc generation passed.
+
 ## AQS-PAGE-01 — Complete Summary enumeration
 
 Add snapshot-bound cursor pagination to collection JSON or a typed API returning the complete bounded report. Cursors
