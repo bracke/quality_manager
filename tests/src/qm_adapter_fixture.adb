@@ -176,7 +176,9 @@ begin
                         (if Ada.Strings.Fixed.Index (Text, "--project 8") > 0 and then Result_Index = 1
                          then "unknown" else "pass") &
                         """,""applicable"":true,""summary"":""ok""," &
-                        """evidence"":""fixture"",""measurement"":{},""findings"":[]}");
+                        """evidence"":""fixture"",""measurement"":" &
+                        (if Result_Index = 3 then "{""basis_points"":9000}" else "{}") &
+                        ",""findings"":[]}");
                   end;
                end loop;
                Ada.Text_IO.Put ("],""executions"":[]}");

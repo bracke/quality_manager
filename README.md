@@ -38,3 +38,9 @@ Phase 8 adds revisioned improvement campaigns. Campaign definitions use
 assessments, retain historical target records, enforce work budgets, and emit
 versioned progress JSON. Compatible active work is shared by global
 remediation identity while every campaign retains independent target evidence.
+
+Phase 9 adds immutable release candidate generations and qualification evidence.
+Qualification requires exact identity alignment, all 33 indicators complete and
+passing, reproducible validation builds, AUnit, applicable proof, release checks,
+and at least 90% production-line coverage. Evidence exports are accepted only
+after their canonical SHA-256 envelope is revalidated.

@@ -452,7 +452,7 @@ package body Quality_Manager.Storage is
       Updated  : Stored_Entity := Value;
       New_Row  : Boolean := False;
    begin
-      if Value.Kind not in Project_Record | Campaign_Record | Campaign_Target_Record then
+      if Value.Kind not in Project_Record | Campaign_Record | Campaign_Target_Record | Release_Record then
          Result := Make_Result
            (Authorization_Required, "record class is append-only", "qm.storage.current-kind");
          return;

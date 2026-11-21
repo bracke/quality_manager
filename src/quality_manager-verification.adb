@@ -192,6 +192,19 @@ package body Quality_Manager.Verification is
                   elsif To_String (Compliance) not in "pass" | "not-applicable" then
                      Evidence.Complete := False;
                   end if;
+                  if To_String (Indicator) = "TST-03"
+                    and then Jsonlib.Documents.Is_Present (Measurement)
+                    and then Document.Kind (Measurement) = Jsonlib.Documents.Object_Value
+                  then
+                     if not Natural_Field
+                       (Document, Measurement, "basis_points", Evidence.Coverage_Basis_Points)
+                     then
+                        Evidence.Complete := False;
+                     end if;
+                  elsif To_String (Indicator) = "PRF-01" then
+                     Evidence.Proof_Applicable := Applicable;
+                     Evidence.Proof_Passed := not Applicable or else To_String (Compliance) = "pass";
+                  end if;
                   if Applicable then
                      if To_String (Execution) /= "succeeded"
                        or else To_String (Compliance) = "not-applicable"

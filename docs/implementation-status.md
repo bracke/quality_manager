@@ -195,3 +195,26 @@ Gate: **passed**. The 20-test suite covers campaign creation, replay, pause/resu
 reconciliation, immutable baseline history, shared remediation, budget exhaustion, cancellation, structured progress,
 policy intersection, deterministic risk, and exact approval validation. Warnings-as-errors, forced validation, and
 GNATdoc passed.
+
+## Phase 9 — Release qualification
+
+| Task | State | Evidence |
+| --- | --- | --- |
+| P9-01 immutable candidate identities | complete | project, commit, source, policy, toolchain, config, generation |
+| P9-02 release policy selection | complete | profile-derived policy/config digests and fail-closed creation |
+| P9-03 complete assessment | complete | exact 33-indicator complete/passing evidence predicate |
+| P9-04 blocking findings | complete | any violation or incomplete evidence blocks qualification |
+| P9-05 remediation generations | complete | source-changing work invalidates and creates a new generation |
+| P9-06 release checks | complete | journaled clean/reproducible Alire, AUnit, and proof execution |
+| P9-07 final-source verification | complete | commit/source/policy/toolchain/config alignment |
+| P9-08 qualification/invalidation | complete | qualified state and supersession on source change |
+| P9-09 evidence bundle/export | complete | versioned schema, canonical digest, verified export |
+| P9-10 qualification tests | complete for coordinator workflow | threshold failure, pass, export, invalidation, recovery |
+
+Local release checks use the bounded process service and a durable operation journal. An observed result is persisted
+before the journal commits and is adopted after interruption. Qualification never treats a failed gate as an execution
+failure and never publishes a tag, pushes a branch, or releases an Alire crate.
+
+Gate: **passed**. The 21-test suite covers below-90% rejection, complete qualification, evidence export,
+post-qualification invalidation, new candidate generation, and interrupted check adoption. Warnings-as-errors, forced
+validation, and GNATdoc passed.

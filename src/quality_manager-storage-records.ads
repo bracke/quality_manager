@@ -46,4 +46,9 @@ package Quality_Manager.Storage.Records is
      (Item   : in out Quality_Manager.Storage.Store;
       Value  : Quality_Manager.Storage.Schema.Campaign_Target;
       Result : out Quality_Manager.Results.Operation_Result);
+
+   procedure Save
+     (Item   : in out Quality_Manager.Storage.Store;
+      Value  : Quality_Manager.Storage.Schema.Release;
+      Result : out Quality_Manager.Results.Operation_Result);
 end Quality_Manager.Storage.Records;

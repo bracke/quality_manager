@@ -235,4 +235,27 @@ package body Quality_Manager.Storage.Records is
    begin
       Quality_Manager.Storage.Put_Current (Item, Entity, Result);
    end Save;
+
+   procedure Save
+     (Item   : in out Quality_Manager.Storage.Store;
+      Value  : Release;
+      Result : out Quality_Manager.Results.Operation_Result) is
+      Entity : constant Stored_Entity :=
+        (Internal_Id => 1, Kind => Release_Record,
+         Entity_Key => To_Unbounded_String ("release:" & To_String (Value.Release_Id)),
+         State => To_Unbounded_String (Quality_Manager.Model.Work_State'Image (Value.State)),
+         Payload => To_Unbounded_String
+           ("{""project"":" & Project_JSON (Value.Project)
+            & ",""candidate_commit"":" & Q (To_String (Value.Candidate_Commit))
+            & ",""source_digest"":" & Q (To_String (Value.Source_Digest))
+            & ",""policy_digest"":" & Q (To_String (Value.Policy_Digest))
+            & ",""toolchain"":" & Q (To_String (Value.Toolchain))
+            & ",""release_config"":" & Q (To_String (Value.Release_Config))
+            & ",""generation"":" & N (Value.Generation)
+            & ",""final_assessment"":" & N (Value.Final_Assessment)
+            & ",""coverage_basis_points"":" & N (Value.Coverage_Basis_Points) & "}"),
+         Terminal => False, Generation => 1);
+   begin
+      Quality_Manager.Storage.Put_Current (Item, Entity, Result);
+   end Save;
 end Quality_Manager.Storage.Records;

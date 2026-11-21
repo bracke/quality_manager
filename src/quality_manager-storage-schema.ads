@@ -122,7 +122,10 @@ package Quality_Manager.Storage.Schema is
       Source_Digest    : Text;
       Policy_Digest    : Text;
       Toolchain        : Text;
+      Release_Config   : Text;
       Generation       : Natural := 1;
+      Final_Assessment : Natural := 0;
+      Coverage_Basis_Points : Natural := 0;
       State            : Quality_Manager.Model.Work_State := Quality_Manager.Model.Discovered;
    end record;
 

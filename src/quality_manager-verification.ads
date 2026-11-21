@@ -20,6 +20,9 @@ package Quality_Manager.Verification is
       Complete             : Boolean := False;
       Indicator_Count      : Natural := 0;
       Violations           : Natural := 0;
+      Coverage_Basis_Points : Natural := 0;
+      Proof_Applicable      : Boolean := False;
+      Proof_Passed          : Boolean := False;
    end record;
 
    type Regression_Evidence is record
