@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "report_type": "problems",
+  "source": {
+    "application": "ada_quality",
+    "database_schema_version": 5,
+    "snapshot": "fnv1a64:fixture"
+  },
+  "selection": {
+    "include_removed": false,
+    "enabled_only": false,
+    "project_id": null,
+    "status": null,
+    "limit": 1,
+    "selected_projects": 1
+  },
+  "data": {
+    "findings": [
+      {
+        "project_id": 7,
+        "run_id": 8,
+        "indicator_id": "SEC-01",
+        "rule": "rule",
+        "severity": "critical",
+        "message": "finding 1",
+        "relative_path": "src/file.adb",
+        "line": 1,
+        "fingerprint": "SEC-01:v2:fixture"
+      }
+    ],
+    "grouped_by_indicator": [
+      {
+        "indicator_id": "SEC-01",
+        "name": "Embedded secrets",
+        "findings": 1,
+        "projects": 1
+      }
+    ],
+    "totals": {
+      "findings": 1,
+      "projects": 1,
+      "by_severity": {
+        "critical": 1,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "info": 0
+      }
+    }
+  }
+}

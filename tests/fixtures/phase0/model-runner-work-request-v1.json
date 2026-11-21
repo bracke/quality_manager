@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "operation_id": "qm-execution-000001",
+  "project": "/projects/httpclient",
+  "task_id": "TASK-001",
+  "expected_task_revision": "revision-fingerprint",
+  "expected_project_identity": "source-fingerprint",
+  "execution_policy": "policy-fingerprint",
+  "timeout_seconds": 3600,
+  "noninteractive": true
+}

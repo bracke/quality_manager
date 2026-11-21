@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "operation_id": "qm-execution-000001",
+  "task_id": "TASK-001",
+  "execution_state": "completed",
+  "native_task_state": "complete",
+  "workspace_state": "integrated",
+  "execution_generation": 1,
+  "result": "success",
+  "diagnostics": [],
+  "audit_reference": "native-audit-id"
+}

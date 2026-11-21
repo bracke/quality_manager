@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "kind": "assessment-comparison",
+  "project_id": 2,
+  "status": "comparison-available",
+  "baseline_id": 2,
+  "current_id": 3,
+  "policy_changed": false,
+  "changes": [
+    {
+      "indicator": "TST-03",
+      "change": "worsened-metric",
+      "before": "9300",
+      "after": "8700"
+    },
+    {
+      "indicator": "TST-03",
+      "change": "failed-gate",
+      "before": "succeeded/pass",
+      "after": "succeeded/violation"
+    }
+  ]
+}
