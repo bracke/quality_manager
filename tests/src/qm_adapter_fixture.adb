@@ -1,4 +1,5 @@
 with Ada.Command_Line;
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Text_IO;
 
@@ -18,6 +19,7 @@ begin
       declare
          Invocation : Unbounded_String;
          Command     : Unbounded_String;
+         Kind        : Unbounded_String;
          Has_State  : Boolean := False;
          Index      : Positive := 1;
       begin
@@ -38,10 +40,26 @@ begin
                end if;
             end;
          end loop;
+         declare
+            Text : constant String := To_String (Invocation);
+         begin
+            if Ada.Strings.Fixed.Index (Text, "project ") = 1 then
+               Kind := To_Unbounded_String ("project-list");
+            elsif Ada.Strings.Fixed.Index (Text, "check ") = 1
+              and then Ada.Strings.Fixed.Index (Text, "--dry-run") > 0
+            then
+               Kind := To_Unbounded_String ("check-plan");
+            elsif Ada.Strings.Fixed.Index (Text, "assessment diff ") = 1 then
+               Kind := To_Unbounded_String ("assessment-comparison");
+            elsif Ada.Strings.Fixed.Index (Text, "doctor ") = 1 then
+               Kind := To_Unbounded_String ("doctor-report");
+            end if;
+         end;
          Ada.Text_IO.Put
            ("{""schema_version"":" & (if Has_State then "2" else "1")
             & ",""command"":""" & To_String (Command) & """"
             & ",""report_type"":""" & To_String (Command) & """"
+            & ",""kind"":""" & To_String (Kind) & """"
             & ",""invocation"":""" & To_String (Invocation) & """}");
       end;
    elsif Ada.Command_Line.Argument_Count >= 2 and then Ada.Command_Line.Argument (2) = "invalid-utf8" then

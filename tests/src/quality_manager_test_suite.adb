@@ -571,11 +571,32 @@ package body Quality_Manager_Test_Suite is
            (Identity_Result.Kind = Quality_Manager.Results.Incompatible_Contract
             and then Length (Database_Identity) = 0,
             "missing durable Ada Quality database identity fails closed");
+         Quality_Manager.Integrations.Quality.List_Projects (Quality_Adapter, Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index (To_String (Response.Document), "project list --json") > 0,
+            "Ada Quality project inventory requires project-list-v1");
+         Quality_Manager.Integrations.Quality.Plan_Check
+           (Quality_Adapter, "7", "ci", False, Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index (To_String (Response.Document), "--dry-run --json") > 0,
+            "Ada Quality planning requires check-plan-v1");
          Quality_Manager.Integrations.Quality.Read_Assessment (Quality_Adapter, 4, Response);
          Assert
            (Response.Status.Kind = Quality_Manager.Results.Success
             and then Ada.Strings.Fixed.Index (To_String (Response.Document), "assessment show 4 --json") > 0,
             "Ada Quality assessment command is exact and versioned");
+         Quality_Manager.Integrations.Quality.Compare (Quality_Adapter, 3, 4, Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index (To_String (Response.Document), "assessment diff 3 4 --json") > 0,
+            "Ada Quality comparison preserves both selected assessments");
+         Quality_Manager.Integrations.Quality.Check_Environment (Quality_Adapter, "7", Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index (To_String (Response.Document), "doctor --project 7 --json") > 0,
+            "Ada Quality doctor requires doctor-report-v1");
 
          Quality_Manager.Integrations.Summary.Initialize
            (Summary_Adapter, "./bin/qm_adapter_fixture", "quality.db");
@@ -593,6 +614,13 @@ package body Quality_Manager_Test_Suite is
             and then Ada.Strings.Fixed.Index
               (To_String (Response.Document), "plan show PLAN-001 --revision 2") > 0,
             "Improve exact-revision command uses schema version 2");
+         Quality_Manager.Integrations.Improve.Verify_Project
+           (Improve_Adapter, "7", 2, 4, Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index
+              (To_String (Response.Document), "verify --project 7 --revision 2 --run 4") > 0,
+            "Improve project verification binds plan revision and assessment");
       end;
    end Test_JSON_CLI_Contracts;
 
