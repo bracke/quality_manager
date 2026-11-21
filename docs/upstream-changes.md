@@ -6,6 +6,11 @@ Add an installation UUID or durable identity to Ada Quality metadata and expose 
 coordinator-facing JSON envelopes. It must survive relocation and backup restore, while database replacement at the
 same path remains detectable. Add migration, import, and replacement tests.
 
+Implementation design validated against the current schema: migrate to schema version 6, store a canonical
+`database_id=<UUID>` in the single schema metadata record, generate it with `Database.UUIDs`, and expose it separately
+from `Snapshot_Identity`. Migration must create the UUID and advance the schema in one transaction. Read-only
+reporting must validate canonical UUID syntax and never generate or repair an identity.
+
 ## AQS-PAGE-01 — Complete Summary enumeration
 
 Add snapshot-bound cursor pagination to collection JSON or a typed API returning the complete bounded report. Cursors

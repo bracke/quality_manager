@@ -61,7 +61,18 @@ Representation dependencies; Quality Manager units compile without warnings.
 | Task | State | Evidence |
 | --- | --- | --- |
 | P3-01 bounded process adapter | complete | no-shell argv, environment replacement, deadline/cancellation, bounded output |
-| P3-02 through P3-10 | pending | adapter implementation follows the frozen Phase 0 contracts |
+| P3-02 inventory and assessment | complete, identity-fenced | exact Ada Quality project/check/assessment commands |
+| P3-03 identity and freshness | blocked by AQ-ID-01 | adapter fails closed when durable database identity is unavailable |
+| P3-04 exact comparison | complete | explicit `assessment diff BASE CURRENT` invocation |
+| P3-05 Summary reports | complete | version-1 summary/problems/regressions/indicators/trends/project adapters |
+| P3-06 planning and revision inspection | complete | version-2 plan/create/show exact-revision adapters |
+| P3-07 approval and publication inspection | complete, approval-fenced | exact plan inspection; autonomous approval returns compatibility error |
+| P3-08 publication and recovery | complete | Improve preflight/apply/recover adapters |
+| P3-09 task and project verification | complete | task/project verification requires exact revision and assessment |
+| P3-10 compatibility/error tests | complete for coordinator adapters | exit classes, UTF-8, schema, discriminator, command construction |
 
-Gate: **in progress**. The process boundary is covered by live subprocess tests; no upstream write operation is
-enabled by this work package.
+Gate: **blocked at the cross-repository acceptance scenario**. All 13 coordinator tests pass with warnings treated as
+errors. Versioned responses are accepted only when their Summary `report_type` or Improve `command` matches the
+invoked operation. The required actual-violation → Improve-plan scenario remains disabled because Ada Quality cannot
+yet qualify a project with a durable database identity. This session's filesystem profile permits writes only in
+`quality_manager`, so AQ-ID-01 could not be applied to the sibling repository; no path-derived substitute was added.

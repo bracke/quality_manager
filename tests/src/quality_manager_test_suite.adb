@@ -11,6 +11,10 @@ with Quality_Manager.CLI;
 with Quality_Manager.Config;
 with Quality_Manager.Identities;
 with Quality_Manager.Integrations.Processes;
+with Quality_Manager.Integrations.JSON_CLI;
+with Quality_Manager.Integrations.Improve;
+with Quality_Manager.Integrations.Quality;
+with Quality_Manager.Integrations.Summary;
 with Quality_Manager.Journal;
 with Quality_Manager.Model;
 with Quality_Manager.Reporting;
@@ -146,6 +150,18 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Schemas.Validate_Versioned_JSON
         ("{""schema_version"":1,""schema_version"":1}", 1, Result);
       Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "duplicate JSON member rejected");
+
+      Quality_Manager.Schemas.Validate_Versioned_JSON
+        ("{""schema_version"":1,""kind"":""project-list""}", 1, Result,
+         "kind", "project-list");
+      Assert (Result.Kind = Quality_Manager.Results.Success, "matching discriminator accepted");
+
+      Quality_Manager.Schemas.Validate_Versioned_JSON
+        ("{""schema_version"":1,""kind"":""findings""}", 1, Result,
+         "kind", "project-list");
+      Assert
+        (Result.Kind = Quality_Manager.Results.Incompatible_Contract,
+         "mismatched document kind rejected");
    end Test_JSON_Contract;
 
    procedure Test_Doctor_Output (Item : in out Fixture) is
@@ -493,6 +509,93 @@ package body Quality_Manager_Test_Suite is
       Assert (not Result.Started, "missing executable is classified before invocation");
    end Test_Process_Adapter;
 
+   procedure Test_JSON_CLI_Contracts (Item : in out Fixture) is
+      pragma Unreferenced (Item);
+      Args : Quality_Manager.Integrations.Processes.String_Vectors.Vector;
+      Env  : Quality_Manager.Integrations.Processes.String_Vectors.Vector;
+      Response : Quality_Manager.Integrations.JSON_CLI.Response;
+
+      procedure Run
+        (Exit_Code : String; JSON : String;
+         Contract : Quality_Manager.Integrations.JSON_CLI.Exit_Contract;
+         Version : Positive := 1) is
+      begin
+         Args.Clear;
+         Args.Append (To_Unbounded_String (Exit_Code));
+         Args.Append (To_Unbounded_String (JSON));
+         Quality_Manager.Integrations.JSON_CLI.Execute
+           ("./bin/qm_adapter_fixture", Args, "", Env, Contract, Version, 10, 4_096, Response);
+      end Run;
+   begin
+      Run ("0", "{""schema_version"":1}", Quality_Manager.Integrations.JSON_CLI.Ada_Quality_Contract);
+      Assert (Response.Status.Kind = Quality_Manager.Results.Success, "quality success normalized");
+      Run ("1", "{""schema_version"":1}", Quality_Manager.Integrations.JSON_CLI.Ada_Quality_Contract);
+      Assert (Response.Status.Kind = Quality_Manager.Results.Negative_Result, "violations are not execution failure");
+      Run ("3", "{""schema_version"":1}", Quality_Manager.Integrations.JSON_CLI.Ada_Quality_Contract);
+      Assert (Response.Status.Kind = Quality_Manager.Results.Stale_Evidence, "incomplete evidence is explicit");
+      Run ("0", "{""schema_version"":999}", Quality_Manager.Integrations.JSON_CLI.Summary_Contract);
+      Assert
+        (Response.Status.Kind = Quality_Manager.Results.Incompatible_Contract,
+         "unknown upstream schema prevents mutation");
+      Run ("4", "", Quality_Manager.Integrations.JSON_CLI.Summary_Contract);
+      Assert (Response.Status.Kind = Quality_Manager.Results.Integrity_Error, "summary database failure normalized");
+      Run ("130", "", Quality_Manager.Integrations.JSON_CLI.Improve_Contract, 2);
+      Assert (Response.Status.Kind = Quality_Manager.Results.Interrupted, "Improve interruption normalized");
+      Run ("0", "invalid-utf8", Quality_Manager.Integrations.JSON_CLI.Ada_Quality_Contract);
+      Assert (Response.Status.Kind = Quality_Manager.Results.Incompatible_Contract, "invalid UTF-8 rejected");
+
+      declare
+         Adapter : Quality_Manager.Integrations.Improve.Adapter;
+      begin
+         Quality_Manager.Integrations.Improve.Initialize
+           (Adapter, "improve", "config.toml", "quality.db", "improve.db");
+         Quality_Manager.Integrations.Improve.Approve_Exact_Revision
+           (Adapter, "PLAN-001", 1, "digest", Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Incompatible_Contract,
+            "autonomous approval fenced until atomic upstream contract exists");
+      end;
+
+      declare
+         Quality_Adapter : Quality_Manager.Integrations.Quality.Adapter;
+         Summary_Adapter : Quality_Manager.Integrations.Summary.Adapter;
+         Improve_Adapter : Quality_Manager.Integrations.Improve.Adapter;
+         Database_Identity : Unbounded_String;
+         Identity_Result : Quality_Manager.Results.Operation_Result;
+      begin
+         Quality_Manager.Integrations.Quality.Initialize
+           (Quality_Adapter, "./bin/qm_adapter_fixture", "quality.db");
+         Quality_Manager.Integrations.Quality.Resolve_Database_Identity
+           (Quality_Adapter, Database_Identity, Identity_Result);
+         Assert
+           (Identity_Result.Kind = Quality_Manager.Results.Incompatible_Contract
+            and then Length (Database_Identity) = 0,
+            "missing durable Ada Quality database identity fails closed");
+         Quality_Manager.Integrations.Quality.Read_Assessment (Quality_Adapter, 4, Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index (To_String (Response.Document), "assessment show 4 --json") > 0,
+            "Ada Quality assessment command is exact and versioned");
+
+         Quality_Manager.Integrations.Summary.Initialize
+           (Summary_Adapter, "./bin/qm_adapter_fixture", "quality.db");
+         Quality_Manager.Integrations.Summary.Read_Problems (Summary_Adapter, Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index (To_String (Response.Document), "problems") > 0,
+            "Summary problems command is versioned JSON");
+
+         Quality_Manager.Integrations.Improve.Initialize
+           (Improve_Adapter, "./bin/qm_adapter_fixture", "improve.toml", "quality.db", "improve.db");
+         Quality_Manager.Integrations.Improve.Read_Plan (Improve_Adapter, "PLAN-001", 2, Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index
+              (To_String (Response.Document), "plan show PLAN-001 --revision 2") > 0,
+            "Improve exact-revision command uses schema version 2");
+      end;
+   end Test_JSON_CLI_Contracts;
+
    function Suite return AUnit.Test_Suites.Access_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
@@ -508,6 +611,7 @@ package body Quality_Manager_Test_Suite is
       Result.Add_Test (Caller.Create ("persistent storage", Test_Persistent_Storage'Access));
       Result.Add_Test (Caller.Create ("corrupt storage", Test_Corrupt_Storage'Access));
       Result.Add_Test (Caller.Create ("bounded process adapter", Test_Process_Adapter'Access));
+      Result.Add_Test (Caller.Create ("JSON CLI contracts", Test_JSON_CLI_Contracts'Access));
       return Result;
    end Suite;
 end Quality_Manager_Test_Suite;

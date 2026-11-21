@@ -24,6 +24,10 @@ Gap **AQ-ID-01**: no stable database installation identity is exposed. Snapshot_
 canonical path does not detect replacement. Coordinator writes remain disabled until Ada Quality exposes a durable
 database UUID/fingerprint through reporting and JSON.
 
+The Phase 3 adapter implements that fence explicitly: resolving the database identity returns
+`Incompatible_Contract` and no identity. It never promotes the mutable snapshot digest or configured path into a
+qualified project key.
+
 ## Ada Quality Summary
 
 The noninteractive CLI exposes summary, projects, project, indicators, indicator, problems, waivers, regressions,
@@ -51,6 +55,9 @@ Improve declares its CLI and versioned JSON as the external contract. Confirmed 
 
 JSON envelope version 2 and stable IMP-E-* diagnostics are authoritative. Publication is approval-gated, journaled,
 provenance-qualified, and adopts matching native tasks. Verification keeps native state separate from quality.
+
+Coordinator adapters additionally validate the response `command` discriminator. Summary adapters perform the same
+check for `report_type`; matching only `schema_version` is insufficient provenance for either interface.
 
 Gap **IMP-APPROVE-01**: the CLI approves only the latest revision and accepts neither an expected revision nor a
 complete content digest. Autonomous approval is disabled until an atomic

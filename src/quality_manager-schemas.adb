@@ -9,7 +9,9 @@ package body Quality_Manager.Schemas is
    procedure Validate_Versioned_JSON
      (Text             : String;
       Expected_Version : Positive;
-      Result           : out Operation_Result) is
+      Result           : out Operation_Result;
+      Discriminator_Name  : String := "";
+      Discriminator_Value : String := "") is
       Document : Jsonlib.Documents.Document;
       Error    : Jsonlib.Errors.Error_Info;
    begin
@@ -50,6 +52,28 @@ package body Quality_Manager.Schemas is
               (Incompatible_Contract,
                "unsupported schema_version" & Document.As_Integer (Version)'Image,
                "qm.schema.version-unsupported");
+         elsif Discriminator_Name /= "" then
+            declare
+               Discriminator : constant Jsonlib.Documents.Node :=
+                 Document.Member (Root, Discriminator_Name);
+            begin
+               if not Jsonlib.Documents.Is_Present (Discriminator)
+                 or else Document.Kind (Discriminator) /= Jsonlib.Documents.String_Value
+               then
+                  Result := Make_Result
+                    (Incompatible_Contract,
+                     Discriminator_Name & " must be a string",
+                     "qm.schema.discriminator-missing");
+               elsif Document.As_String (Discriminator) /= Discriminator_Value then
+                  Result := Make_Result
+                    (Incompatible_Contract,
+                     "unexpected " & Discriminator_Name & ": " &
+                       Document.As_String (Discriminator),
+                     "qm.schema.discriminator-mismatch");
+               else
+                  Result := Make_Result (Success);
+               end if;
+            end;
          else
             Result := Make_Result (Success);
          end if;
