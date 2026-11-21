@@ -195,4 +195,44 @@ package body Quality_Manager.Storage.Records is
    begin
       Quality_Manager.Storage.Put (Item, Entity, Result);
    end Save;
+
+   procedure Save
+     (Item   : in out Quality_Manager.Storage.Store;
+      Value  : Campaign;
+      Result : out Quality_Manager.Results.Operation_Result) is
+      Entity : constant Stored_Entity :=
+        (Internal_Id => 1, Kind => Campaign_Record,
+         Entity_Key => To_Unbounded_String ("campaign:" & To_String (Value.Campaign_Id)),
+         State => To_Unbounded_String (Quality_Manager.Model.Work_State'Image (Value.State)),
+         Payload => To_Unbounded_String
+           ("{""revision"":" & N (Value.Definition_Revision)
+            & ",""definition_digest"":" & Q (To_String (Value.Definition_Digest))
+            & ",""scope"":" & Q (To_String (Value.Scope))
+            & ",""baseline"":" & Q (To_String (Value.Baseline))
+            & ",""budget"":" & N (Value.Budget)
+            & ",""used"":" & N (Value.Used) & "}"),
+         Terminal => False, Generation => 1);
+   begin
+      Quality_Manager.Storage.Put_Current (Item, Entity, Result);
+   end Save;
+
+   procedure Save
+     (Item   : in out Quality_Manager.Storage.Store;
+      Value  : Campaign_Target;
+      Result : out Quality_Manager.Results.Operation_Result) is
+      Entity : constant Stored_Entity :=
+        (Internal_Id => 1, Kind => Campaign_Target_Record,
+         Entity_Key => To_Unbounded_String ("campaign-target:" & To_String (Value.Composite_Key)),
+         State => Value.Latest_Result,
+         Payload => To_Unbounded_String
+           ("{""campaign_id"":" & Q (To_String (Value.Campaign_Id))
+            & ",""definition_revision"":" & N (Value.Definition_Revision)
+            & ",""project"":" & Project_JSON (Value.Project)
+            & ",""indicator"":" & Q (To_String (Value.Indicator))
+            & ",""baseline"":" & Q (To_String (Value.Baseline))
+            & ",""target"":" & Q (To_String (Value.Target)) & "}"),
+         Terminal => False, Generation => 1);
+   begin
+      Quality_Manager.Storage.Put_Current (Item, Entity, Result);
+   end Save;
 end Quality_Manager.Storage.Records;

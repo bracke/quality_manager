@@ -171,3 +171,27 @@ historical cycles, events, attempts, and verification evidence remain append-onl
 Gate: **passed**. The 18-test suite covers deterministic priority, resource limits, restart reconstruction,
 eligibility persistence, cooperative pause/resume, qualified inventory, disabled-project isolation, and multi-project
 assessment scheduling. The warnings-as-errors run, forced validation build, and GNATdoc generation passed.
+
+## Phase 8 — Autonomous improvement campaigns
+
+| Task | State | Evidence |
+| --- | --- | --- |
+| P8-01 versioned specification | complete | strict `campaign-v1` JSON and immutable definition records |
+| P8-02 frozen population/baselines | complete | enabled qualified inventory and per-revision target records |
+| P8-03 target evaluation | complete | assessment-bound pass/violation/incomplete/applicability outcomes |
+| P8-04 deterministic priority | complete | campaign scheduler band with age/stable-ID ordering |
+| P8-05 cross-workflow deduplication | complete | active global-remediation lookup and attachment |
+| P8-06 work budgets | complete | durable used/budget counters and fail-closed exhaustion |
+| P8-07 lifecycle control | complete | start, pause, resume, cancellation, and revision reconciliation |
+| P8-08 completion/blocking | complete | all-current-target predicate; stale/unknown evidence never satisfies |
+| P8-09 progress reports | complete | versioned campaign-progress JSON |
+| P8-10 concurrency/history tests | complete | shared work, revision history, baseline preservation, budget stop |
+
+The policy layer intersects coordinator, project, workflow, and task permissions so a lower layer cannot expand
+authority. It deterministically escalates unknown scope, unavailable checks, public API, security, and repeated-failure
+risk. Approval validation binds the qualified project, exact plan revision/content, action, policy, and expiration.
+
+Gate: **passed**. The 20-test suite covers campaign creation, replay, pause/resume, stale evidence, complete target
+reconciliation, immutable baseline history, shared remediation, budget exhaustion, cancellation, structured progress,
+policy intersection, deterministic risk, and exact approval validation. Warnings-as-errors, forced validation, and
+GNATdoc passed.

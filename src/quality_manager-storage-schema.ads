@@ -101,11 +101,13 @@ package Quality_Manager.Storage.Schema is
       Baseline          : Text;
       State             : Quality_Manager.Model.Work_State := Quality_Manager.Model.Discovered;
       Budget            : Natural := 0;
+      Used              : Natural := 0;
    end record;
 
    type Campaign_Target is record
       Composite_Key  : Text;
       Campaign_Id    : Text;
+      Definition_Revision : Positive := 1;
       Project        : Quality_Manager.Identities.Project_Key;
       Indicator      : Text;
       Baseline       : Text;

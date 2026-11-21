@@ -8,7 +8,8 @@ the evidence, approval, publication, or workspace semantics of those systems.
 The implementation currently includes the Phase 1 foundation, durable Phase 2
 storage and recovery, Phase 3 quality/planning adapters, Phase 5 native
 execution integration, Phase 6 independent verification, and Phase 7 durable
-maintenance scheduling. The model_runner path in `config/quality-manager.toml`
+maintenance scheduling, plus Phase 8 improvement campaigns. The model_runner path in
+`config/quality-manager.toml`
 must identify an implementation of `headless-work-v1`.
 
 ```sh
@@ -31,3 +32,9 @@ Phase 7 adds a restart-reconstructible priority scheduler and one-shot/daemon
 maintenance entry points. Enabled projects receive independent durable cycles;
 assessment work is committed before it becomes visible to workers. Disabled or
 ineligible projects cannot stop unrelated portfolio work.
+
+Phase 8 adds revisioned improvement campaigns. Campaign definitions use
+`schemas/campaign-v1.schema.json`, bind qualified projects and baseline
+assessments, retain historical target records, enforce work budgets, and emit
+versioned progress JSON. Compatible active work is shared by global
+remediation identity while every campaign retains independent target evidence.

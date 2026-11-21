@@ -8,6 +8,7 @@ with AUnit.Assertions; use AUnit.Assertions;
 with AUnit.Test_Caller;
 
 with Quality_Manager.CLI;
+with Quality_Manager.Campaigns;
 with Quality_Manager.Config;
 with Quality_Manager.Dispatch;
 with Quality_Manager.Identities;
@@ -24,6 +25,7 @@ with Quality_Manager.Reporting;
 with Quality_Manager.Results;
 with Quality_Manager.Scheduler;
 with Quality_Manager.Priorities;
+with Quality_Manager.Policies;
 with Quality_Manager.Schemas;
 with Quality_Manager.Storage.Schema;
 with Quality_Manager.Storage.Migrations;
@@ -39,9 +41,11 @@ package body Quality_Manager_Test_Suite is
    use type Quality_Manager.Integrations.Runner.Execution_State;
    use type Quality_Manager.Model.Work_State;
    use type Quality_Manager.Model.Outcome_Kind;
+   use type Quality_Manager.Model.Risk_Level;
    use type Quality_Manager.Verification.Retry_Action;
    use type Quality_Manager.Scheduler.Work_Resource;
    use type Quality_Manager.Maintenance.Assessment_Reason;
+   use type Quality_Manager.Policies.Permission;
 
    package Caller is new AUnit.Test_Caller (Fixture);
 
@@ -1427,6 +1431,184 @@ package body Quality_Manager_Test_Suite is
          raise;
    end Test_Maintenance_Cycle;
 
+   procedure Test_Campaign_Workflow (Item : in out Fixture) is
+      pragma Unreferenced (Item);
+      Path    : constant String := "/tmp/quality-manager-campaign.database";
+      Store   : aliased Quality_Manager.Storage.Store;
+      Context : Quality_Manager.Campaigns.Context;
+      Result  : Quality_Manager.Results.Operation_Result;
+      Values  : Quality_Manager.Storage.Entity_Vectors.Vector;
+      Loaded  : Quality_Manager.Storage.Stored_Entity;
+      Shared  : Unbounded_String;
+      Progress_Text : Unbounded_String;
+      Found   : Boolean;
+      Project : constant Quality_Manager.Identities.Project_Key :=
+        (To_Unbounded_String ("database-a"), 7, To_Unbounded_String ("/project"));
+      Work : constant Quality_Manager.Storage.Schema.Work_Item :=
+        (Work_Id => To_Unbounded_String ("work:shared-campaign"),
+         Global_Remediation => To_Unbounded_String ("global:coverage"), Project => Project,
+         Origin => Quality_Manager.Model.Maintenance,
+         Finding_Identities => To_Unbounded_String ("TST-03"), Priority => 150,
+         Improve_Plan_Id => Null_Unbounded_String, Improve_Revision => 0,
+         Improve_Task_Id => Null_Unbounded_String, State => Quality_Manager.Model.Planning,
+         Outcome => Quality_Manager.Model.No_Outcome);
+
+      function Definition (Id : String; Revision, Budget : Positive) return String is
+        ("{""schema_version"":1,""campaign_id"":""" & Id
+         & """,""definition_revision"":"
+         & Ada.Strings.Fixed.Trim (Positive'Image (Revision), Ada.Strings.Both)
+         & ",""projects"":["
+         & "{""quality_database_id"":""database-a"",""project_id"":7,""path"":""/project"","
+         & """baseline_assessment"":1},"
+         & "{""quality_database_id"":""database-a"",""project_id"":8,""path"":""/second"","
+         & """baseline_assessment"":1}],"
+         & """indicators"":[""TST-03""],""target"":""pass"",""work_budget"":"
+         & Ada.Strings.Fixed.Trim (Positive'Image (Budget), Ada.Strings.Both)
+         & ",""priority_rule"":""campaign"",""autonomy_policy_digest"":""policy-1""}");
+
+      procedure Cleanup is
+      begin
+         Remove_Test_File;
+         if Ada.Directories.Exists (Path) then
+            Ada.Directories.Delete_File (Path);
+         end if;
+      end Cleanup;
+   begin
+      Cleanup;
+      Quality_Manager.Storage.Open (Store, Path, True, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "campaign store opened");
+      Quality_Manager.Campaigns.Initialize (Context, Store'Unchecked_Access);
+      Quality_Manager.Storage.Records.Save
+        (Store,
+         Quality_Manager.Storage.Schema.Project'
+           (Key => Project, Enabled => True, Last_Assessment_Run => 1,
+            Last_Source_Fingerprint => To_Unbounded_String ("source-1")), Result);
+      Quality_Manager.Storage.Records.Save
+        (Store,
+         Quality_Manager.Storage.Schema.Project'
+           (Key => (To_Unbounded_String ("database-a"), 8, To_Unbounded_String ("/second")),
+            Enabled => True, Last_Assessment_Run => 1,
+            Last_Source_Fingerprint => To_Unbounded_String ("source-1")), Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "campaign population inventory persisted");
+      Write_Text (Definition ("coverage-90", 1, 2));
+      Quality_Manager.Campaigns.Create (Context, Base_Path, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "versioned campaign definition persisted");
+      Quality_Manager.Campaigns.Create (Context, Base_Path, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "same campaign definition is idempotent");
+      Quality_Manager.Storage.List
+        (Store, Quality_Manager.Storage.Campaign_Target_Record, Values, 20, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success and then Natural (Values.Length) = 2,
+              "campaign population and baselines are frozen per project target");
+      Quality_Manager.Campaigns.Start (Context, "coverage-90", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "campaign starts from its frozen definition");
+      Quality_Manager.Storage.Records.Save (Store, Work, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "shared remediation work persisted");
+      Quality_Manager.Campaigns.Find_Shared_Work
+        (Context, "global:coverage", Shared, Found, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success and then Found
+         and then To_String (Shared) = "work:shared-campaign",
+         "campaign attaches to compatible active remediation instead of duplicating execution");
+      Quality_Manager.Campaigns.Pause (Context, "coverage-90", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "campaign pauses without rewriting baselines");
+      Quality_Manager.Campaigns.Resume (Context, "coverage-90", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "paused campaign resumes");
+      Quality_Manager.Campaigns.Update_Target
+        (Context, "coverage-90", 7, "TST-03", 1, "pass", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Stale_Evidence,
+              "frozen baseline evidence cannot satisfy a campaign target as current evidence");
+      Quality_Manager.Campaigns.Update_Target
+        (Context, "coverage-90", 7, "TST-03", 2, "pass", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "first campaign target evaluated");
+      Quality_Manager.Campaigns.Update_Target
+        (Context, "coverage-90", 8, "TST-03", 2, "pass", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "second campaign target evaluated");
+      Quality_Manager.Campaigns.Reconcile (Context, "coverage-90", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "campaign target reconciliation succeeds");
+      Quality_Manager.Storage.Read (Store, "campaign:coverage-90", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Loaded.State) = Quality_Manager.Model.Work_State'Image
+           (Quality_Manager.Model.Verified),
+         "campaign completes only after every current target is satisfied");
+      Progress_Text := To_Unbounded_String
+        (Quality_Manager.Campaigns.Progress (Context, "coverage-90", Result));
+      Quality_Manager.Schemas.Validate_Versioned_JSON (To_String (Progress_Text), 1, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Ada.Strings.Fixed.Index (To_String (Progress_Text), """satisfied_targets"":2") > 0,
+         "campaign progress is available as versioned structured output");
+
+      Write_Text (Definition ("coverage-90", 2, 2));
+      Quality_Manager.Campaigns.Create (Context, Base_Path, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "new campaign definition revision is accepted");
+      Quality_Manager.Storage.List
+        (Store, Quality_Manager.Storage.Campaign_Target_Record, Values, 20, Result);
+      Assert (Natural (Values.Length) = 4, "historical campaign baselines are retained across revisions");
+
+      Write_Text (Definition ("budgeted", 1, 1));
+      Quality_Manager.Campaigns.Create (Context, Base_Path, Result);
+      Quality_Manager.Campaigns.Start (Context, "budgeted", Result);
+      Quality_Manager.Campaigns.Record_Execution (Context, "budgeted", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "campaign consumes work within its budget");
+      Quality_Manager.Campaigns.Record_Execution (Context, "budgeted", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Authorization_Required,
+              "campaign budget exhaustion blocks additional execution");
+      Quality_Manager.Campaigns.Cancel (Context, "budgeted", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "blocked campaign can be cancelled");
+      Quality_Manager.Storage.Close (Store, Result);
+      Cleanup;
+   exception
+      when others =>
+         Quality_Manager.Storage.Close (Store, Result);
+         Cleanup;
+         raise;
+   end Test_Campaign_Workflow;
+
+   procedure Test_Authorization_Policies (Item : in out Fixture) is
+      pragma Unreferenced (Item);
+      Maximum : constant Quality_Manager.Policies.Policy_Set := Quality_Manager.Policies.Initial_Maximum;
+      Restricted : Quality_Manager.Policies.Policy_Set := Maximum;
+      Effective  : Quality_Manager.Policies.Policy_Set;
+      Risk       : Quality_Manager.Policies.Risk_Decision;
+      Result     : Quality_Manager.Results.Operation_Result;
+      Project    : constant Quality_Manager.Identities.Project_Key :=
+        (To_Unbounded_String ("database-a"), 7, To_Unbounded_String ("/project"));
+      Approval   : constant Quality_Manager.Storage.Schema.Approval :=
+        (Approval_Id => To_Unbounded_String ("approval-1"), Project => Project,
+         Plan_Id => To_Unbounded_String ("plan-1"), Plan_Revision => 2,
+         Content_Digest => To_Unbounded_String ("content-1"),
+         Authorized_Action => To_Unbounded_String ("publish"),
+         Policy_Digest => To_Unbounded_String ("policy-1"), Approver => To_Unbounded_String ("human"),
+         Created_At => 1, Expires_At => 100);
+   begin
+      Restricted.Permissions (Quality_Manager.Policies.Execute_Isolated_Changes) :=
+        Quality_Manager.Policies.Denied;
+      Restricted.Digest := To_Unbounded_String ("project-policy");
+      Effective := Quality_Manager.Policies.Intersect (Maximum, Restricted);
+      Assert
+        (Effective.Permissions (Quality_Manager.Policies.Execute_Isolated_Changes)
+           = Quality_Manager.Policies.Denied,
+         "lower policy layers cannot expand coordinator authorization");
+      Assert
+        (not Quality_Manager.Policies.Permits_Automatically
+           (Maximum, Quality_Manager.Policies.Approve_Improve_Plan),
+         "Improve plan approval requires explicit authorization");
+      Risk := Quality_Manager.Policies.Classify
+        ((Declared_Risk => Quality_Manager.Model.Low_Risk, Security_Sensitive => False,
+          Public_API_Change => False, Build_Or_Release_Change => False,
+          Required_Checks_Available => False, Prior_Failed_Attempts => 0, Scope_Known => True));
+      Assert (Risk.Requires_Review and then Risk.Level = Quality_Manager.Model.High_Risk,
+              "unavailable checks fail closed into human review");
+      Quality_Manager.Policies.Validate_Approval
+        (Approval, Project, "plan-1", 2, "content-1", "publish", "policy-1", 50, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "exact unexpired approval is accepted");
+      Quality_Manager.Policies.Validate_Approval
+        (Approval, Project, "plan-1", 3, "content-1", "publish", "policy-1", 50, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Authorization_Required,
+              "approval cannot authorize another plan revision");
+   end Test_Authorization_Policies;
+
    function Suite return AUnit.Test_Suites.Access_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
@@ -1448,6 +1630,8 @@ package body Quality_Manager_Test_Suite is
       Result.Add_Test (Caller.Create ("verification workflow", Test_Verification_Workflow'Access));
       Result.Add_Test (Caller.Create ("durable scheduler", Test_Durable_Scheduler'Access));
       Result.Add_Test (Caller.Create ("maintenance cycle", Test_Maintenance_Cycle'Access));
+      Result.Add_Test (Caller.Create ("campaign workflow", Test_Campaign_Workflow'Access));
+      Result.Add_Test (Caller.Create ("authorization policies", Test_Authorization_Policies'Access));
       return Result;
    end Suite;
 end Quality_Manager_Test_Suite;

@@ -452,9 +452,9 @@ package body Quality_Manager.Storage is
       Updated  : Stored_Entity := Value;
       New_Row  : Boolean := False;
    begin
-      if Value.Kind /= Project_Record then
+      if Value.Kind not in Project_Record | Campaign_Record | Campaign_Target_Record then
          Result := Make_Result
-           (Authorization_Required, "only current project inventory may be replaced", "qm.storage.current-kind");
+           (Authorization_Required, "record class is append-only", "qm.storage.current-kind");
          return;
       end if;
       Result := Validate_Entity (Value);
