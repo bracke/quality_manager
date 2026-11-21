@@ -132,6 +132,7 @@ package Quality_Manager.Storage.Schema is
       Native_Result       : Text;
       Improve_Result      : Text;
       Regression_Result   : Text;
+      Candidate_Revision  : Text;
       Source_Fingerprint  : Text;
       Policy_Fingerprint  : Text;
       Toolchain_Fingerprint : Text;

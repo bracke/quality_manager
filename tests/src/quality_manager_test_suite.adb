@@ -26,6 +26,7 @@ with Quality_Manager.Storage.Schema;
 with Quality_Manager.Storage.Migrations;
 with Quality_Manager.Storage.Records;
 with Quality_Manager.Transitions;
+with Quality_Manager.Verification;
 
 package body Quality_Manager_Test_Suite is
    use type Quality_Manager.CLI.Command_Kind;
@@ -34,6 +35,8 @@ package body Quality_Manager_Test_Suite is
    use type Quality_Manager.Storage.Record_Kind;
    use type Quality_Manager.Integrations.Runner.Execution_State;
    use type Quality_Manager.Model.Work_State;
+   use type Quality_Manager.Model.Outcome_Kind;
+   use type Quality_Manager.Verification.Retry_Action;
 
    package Caller is new AUnit.Test_Caller (Fixture);
 
@@ -616,10 +619,11 @@ package body Quality_Manager_Test_Suite is
            (Response.Status.Kind = Quality_Manager.Results.Success
             and then Ada.Strings.Fixed.Index (To_String (Response.Document), "assessment show 4 --json") > 0,
             "Ada Quality assessment command is exact and versioned");
-         Quality_Manager.Integrations.Quality.Compare (Quality_Adapter, 3, 4, Response);
+         Quality_Manager.Integrations.Quality.Compare (Quality_Adapter, 1, 2, Response);
          Assert
            (Response.Status.Kind = Quality_Manager.Results.Success
-            and then Ada.Strings.Fixed.Index (To_String (Response.Document), "assessment diff 3 4 --json") > 0,
+            and then Ada.Strings.Fixed.Index (To_String (Response.Document), """baseline_id"":1") > 0
+            and then Ada.Strings.Fixed.Index (To_String (Response.Document), """current_id"":2") > 0,
             "Ada Quality comparison preserves both selected assessments");
          Quality_Manager.Integrations.Quality.Check_Environment (Quality_Adapter, "7", Response);
          Assert
@@ -893,6 +897,333 @@ package body Quality_Manager_Test_Suite is
          raise;
    end Test_Native_Dispatch;
 
+   procedure Test_Verification_Engine (Item : in out Fixture) is
+      pragma Unreferenced (Item);
+
+      function Assessment_JSON (Source : String; Complete : Boolean := True) return String is
+         Text : Unbounded_String := To_Unbounded_String
+           ("{""schema_version"":1,""assessment_id"":2,""project_id"":7," &
+            """project_path"":""/project"",""source_fingerprint"":""" & Source & """," &
+            """policy_fingerprint"":""policy"",""toolchain_fingerprint"":""toolchain""," &
+            """status"":""ASSESSMENT_COMPLETED"",""results"":[");
+      begin
+         for Index in 1 .. 33 loop
+            if Index > 1 then
+               Append (Text, ",");
+            end if;
+            declare
+               Number : constant String := Ada.Strings.Fixed.Trim
+                 (Natural'Image (Index), Ada.Strings.Both);
+               Indicator : constant String := "TST-" & (if Index < 10 then "0" else "") & Number;
+            begin
+               Append
+                 (Text,
+                  "{""indicator"":""" & Indicator & """,""execution"":""succeeded""," &
+                  """compliance"":""" &
+                  (if not Complete and then Index = 1 then "unknown" else "pass") &
+                  """,""applicable"":true,""summary"":""ok""," &
+                  """evidence"":""fixture"",""measurement"":{},""findings"":[]}");
+            end;
+         end loop;
+         Append (Text, "],""executions"":[]}");
+         return To_String (Text);
+      end Assessment_JSON;
+
+      function Response (Text : String) return Quality_Manager.Integrations.JSON_CLI.Response is
+        ((Status => Quality_Manager.Results.Make_Result (Quality_Manager.Results.Success),
+          Exit_Status => 0,
+          Document => To_Unbounded_String (Text),
+          Diagnostics => Null_Unbounded_String));
+
+      Assessment : Quality_Manager.Verification.Assessment_Evidence;
+      Regression : Quality_Manager.Verification.Regression_Evidence;
+      Improve    : Quality_Manager.Verification.Improve_Evidence;
+      Native     : Quality_Manager.Integrations.Runner.Task_Snapshot := (others => <>);
+      Context    : Quality_Manager.Verification.Verification_Context :=
+        (Project_Id            => 7,
+         Project_Path          => To_Unbounded_String ("/project"),
+         Candidate_Source      => To_Unbounded_String ("candidate-source"),
+         Policy_Fingerprint    => To_Unbounded_String ("policy"),
+         Toolchain_Fingerprint => To_Unbounded_String ("toolchain"),
+         Baseline_Assessment   => 1,
+         Current_Assessment    => 2,
+         Improve_Plan_Id       => To_Unbounded_String ("PLAN-001"),
+         Improve_Task_Id       => To_Unbounded_String ("IMP-001"));
+      Decision : Quality_Manager.Verification.Verification_Decision;
+      Result   : Quality_Manager.Results.Operation_Result;
+   begin
+      Quality_Manager.Verification.Decode_Assessment
+        (Response (Assessment_JSON ("candidate-source")), Assessment, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success and then Assessment.Complete,
+         "complete 33-indicator assessment evidence is decoded");
+      Quality_Manager.Verification.Decode_Regression
+        (Response
+           ("{""schema_version"":1,""kind"":""assessment-comparison"",""project_id"":7," &
+            """status"":""comparison-available"",""baseline_id"":1,""current_id"":2," &
+            """policy_changed"":false,""changes"":[]}"),
+         Regression, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success and then Regression.Regression_Count = 0,
+         "explicit selected-baseline comparison is decoded");
+      Quality_Manager.Verification.Decode_Improve
+        (Response
+           ("{""schema_version"":2,""command"":""verify"",""data"":{" &
+            """plan_id"":""PLAN-001"",""baseline_run"":1,""verification_run"":2," &
+            """outcome"":""verified"",""plan_outcome"":""verified""," &
+            """project_outcome"":""verified"",""comparable"":true,""new_critical"":0," &
+            """explanation"":""resolved"",""tasks"":[{""task_id"":""IMP-001""," &
+            """outcome"":""verified"",""matched"":1,""total"":1," &
+            """explanation"":""resolved""}]}}"),
+         "IMP-001", Improve, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success and then Improve.Task_Found,
+         "exact Improve task verification is decoded");
+
+      Native.State := Quality_Manager.Integrations.Runner.Completed_State;
+      Native.Workspace_State := To_Unbounded_String ("integrated");
+      Quality_Manager.Verification.Decide
+        (Native, Assessment, Regression, Improve, Context, Decision);
+      Assert
+        (Decision.Verified and then Decision.Outcome = Quality_Manager.Model.Satisfied,
+         "N and Q and R and F is the only verified outcome");
+
+      Context.Candidate_Source := To_Unbounded_String ("different-source");
+      Quality_Manager.Verification.Decide
+        (Native, Assessment, Regression, Improve, Context, Decision);
+      Assert
+        (not Decision.Verified and then Decision.Outcome = Quality_Manager.Model.Evidence_Unavailable,
+         "source mismatch invalidates otherwise successful evidence");
+      Context.Candidate_Source := To_Unbounded_String ("candidate-source");
+      Quality_Manager.Verification.Decode_Assessment
+        (Response (Assessment_JSON ("candidate-source", False)), Assessment, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success and then not Assessment.Complete,
+         "an assessment missing one indicator remains incomplete evidence");
+      Quality_Manager.Verification.Decide
+        (Native, Assessment, Regression, Improve, Context, Decision);
+      Assert
+        (Decision.Outcome = Quality_Manager.Model.Evidence_Unavailable,
+         "incomplete assessment never satisfies verification");
+      Quality_Manager.Verification.Decode_Assessment
+        (Response (Assessment_JSON ("candidate-source")), Assessment, Result);
+      Regression.Regression_Count := 1;
+      Quality_Manager.Verification.Decide
+        (Native, Assessment, Regression, Improve, Context, Decision);
+      Assert
+        (Decision.Outcome = Quality_Manager.Model.Regression,
+         "a new regression rejects the candidate");
+      Regression.Regression_Count := 0;
+      Regression.Compatibility_Failure := True;
+      Quality_Manager.Verification.Decide
+        (Native, Assessment, Regression, Improve, Context, Decision);
+      Assert
+        (Decision.Outcome = Quality_Manager.Model.Policy_Incompatible,
+         "incompatible baseline evidence is not reported as no regression");
+      Assert
+        (Quality_Manager.Verification.Retry_For (Decision.Outcome, 1, 2) =
+           Quality_Manager.Verification.Establish_Compatible_Baseline,
+         "policy or toolchain changes require a new compatible baseline");
+      Regression.Compatibility_Failure := False;
+      Improve.Task_Outcome := To_Unbounded_String ("still-failing");
+      Quality_Manager.Verification.Decide
+        (Native, Assessment, Regression, Improve, Context, Decision);
+      Assert
+        (Decision.Outcome = Quality_Manager.Model.Unresolved,
+         "native completion without quality resolution is not verified");
+
+      Assert
+        (Quality_Manager.Verification.Retry_For (Quality_Manager.Model.Regression, 1, 2) =
+           Quality_Manager.Verification.Reject_Candidate,
+         "regressions reject rather than retry the same candidate");
+      Assert
+        (Quality_Manager.Verification.Retry_For (Quality_Manager.Model.Unresolved, 2, 2) =
+           Quality_Manager.Verification.Block_Work,
+         "attempt budget cannot be reset by replanning");
+   end Test_Verification_Engine;
+
+   procedure Test_Verification_Workflow (Item : in out Fixture) is
+      pragma Unreferenced (Item);
+      Path      : constant String := "/tmp/quality-manager-verification.database";
+      Store     : Quality_Manager.Storage.Store;
+      Quality   : Quality_Manager.Integrations.Quality.Adapter;
+      Planner   : Quality_Manager.Integrations.Improve.Adapter;
+      Native    : Quality_Manager.Integrations.Runner.Task_Snapshot := (others => <>);
+      Decision  : Quality_Manager.Verification.Verification_Decision;
+      Result    : Quality_Manager.Results.Operation_Result;
+      Loaded    : Quality_Manager.Storage.Stored_Entity;
+      Project   : constant Quality_Manager.Identities.Project_Key :=
+        (Quality_Database_Id => To_Unbounded_String ("123e4567-e89b-12d3-a456-426614174000"),
+         Quality_Project_Id  => 7,
+         Canonical_Path      => To_Unbounded_String ("/project"));
+      Work      : constant Quality_Manager.Storage.Schema.Work_Item :=
+        (Work_Id            => To_Unbounded_String ("work:verification"),
+         Global_Remediation => To_Unbounded_String ("remediation:verification"),
+         Project            => Project,
+         Origin             => Quality_Manager.Model.Maintenance,
+         Finding_Identities => To_Unbounded_String ("AQ-01"),
+         Priority           => 1,
+         Improve_Plan_Id    => To_Unbounded_String ("PLAN-001"),
+         Improve_Revision   => 1,
+         Improve_Task_Id    => To_Unbounded_String ("IMP-001"),
+         State              => Quality_Manager.Model.Awaiting_Assessment,
+         Outcome            => Quality_Manager.Model.No_Outcome);
+      Request   : constant Quality_Manager.Verification.Remediation_Request :=
+        (Work_Id               => To_Unbounded_String ("work:verification"),
+         Project               => Project,
+         Project_Selector      => To_Unbounded_String ("7"),
+         Profile               => To_Unbounded_String ("ci"),
+         Candidate_Revision    => To_Unbounded_String ("candidate-commit"),
+         Candidate_Source      => To_Unbounded_String ("candidate-source"),
+         Policy_Fingerprint    => To_Unbounded_String ("policy"),
+         Toolchain_Fingerprint => To_Unbounded_String ("toolchain"),
+         Baseline_Assessment   => 1,
+         Improve_Plan_Id       => To_Unbounded_String ("PLAN-001"),
+         Improve_Plan_Revision => 1,
+         Improve_Task_Id       => To_Unbounded_String ("IMP-001"),
+         Contract_Digest       => To_Unbounded_String ("contract-digest"),
+         Assessment_Operation  => 200,
+         Improve_Operation     => 201,
+         Attempts_Used         => 1,
+         Maximum_Attempts      => 2);
+
+      procedure Cleanup is
+      begin
+         if Ada.Directories.Exists (Path) then
+            Ada.Directories.Delete_File (Path);
+         end if;
+      end Cleanup;
+   begin
+      Cleanup;
+      Quality_Manager.Storage.Open (Store, Path, True, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "verification store opened");
+      Quality_Manager.Storage.Records.Save (Store, Work, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "awaiting-assessment work persisted");
+      Quality_Manager.Integrations.Quality.Initialize
+        (Quality, "./bin/qm_adapter_fixture", "quality.db");
+      Quality_Manager.Integrations.Improve.Initialize
+        (Planner, "./bin/qm_adapter_fixture", "improve.toml", "quality.db", "improve.db");
+      Native.State := Quality_Manager.Integrations.Runner.Completed_State;
+      Native.Workspace_State := To_Unbounded_String ("integrated");
+
+      Quality_Manager.Verification.Verify_Remediation
+        (Store, Quality, Planner, Native, Request, Decision, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success and then Decision.Verified,
+         "fresh assessment, explicit comparison, and Improve verification complete autonomously");
+      Quality_Manager.Storage.Read (Store, "work:verification", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Loaded.State) = Quality_Manager.Model.Work_State'Image
+           (Quality_Manager.Model.Verified),
+         "only the complete independent predicate marks work verified");
+      Quality_Manager.Storage.Read (Store, "journal:200", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Loaded.State) = Quality_Manager.Journal.Journal_State'Image
+           (Quality_Manager.Journal.Committed),
+         "authoritative assessment side effect is journaled");
+      Quality_Manager.Storage.Read (Store, "journal:201", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Loaded.State) = Quality_Manager.Journal.Journal_State'Image
+           (Quality_Manager.Journal.Committed),
+         "Improve verification side effect is journaled");
+      Quality_Manager.Verification.Verify_Remediation
+        (Store, Quality, Planner, Native, Request, Decision, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success and then Decision.Verified,
+         "repeated workflow recovery adopts the exact historical verification");
+
+      declare
+         Unresolved_Work : Quality_Manager.Storage.Schema.Work_Item := Work;
+         Unresolved      : Quality_Manager.Verification.Remediation_Request := Request;
+      begin
+         Unresolved_Work.Work_Id := To_Unbounded_String ("work:still-failing");
+         Unresolved_Work.Global_Remediation := To_Unbounded_String ("remediation:still-failing");
+         Unresolved_Work.Improve_Task_Id := To_Unbounded_String ("IMP-FAIL");
+         Quality_Manager.Storage.Records.Save (Store, Unresolved_Work, Result);
+         Unresolved.Work_Id := Unresolved_Work.Work_Id;
+         Unresolved.Improve_Task_Id := To_Unbounded_String ("IMP-FAIL");
+         Unresolved.Assessment_Operation := 204;
+         Unresolved.Improve_Operation := 205;
+         Quality_Manager.Verification.Verify_Remediation
+           (Store, Quality, Planner, Native, Unresolved, Decision, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Negative_Result
+            and then Decision.Outcome = Quality_Manager.Model.Unresolved,
+            "native completion without resolving the finding remains unverified");
+         Quality_Manager.Storage.Read (Store, "work:still-failing", Loaded, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then To_String (Loaded.State) = Quality_Manager.Model.Work_State'Image
+              (Quality_Manager.Model.Planning),
+            "an unresolved finding is sent to bounded replanning");
+      end;
+
+      declare
+         Regression_Work : Quality_Manager.Storage.Schema.Work_Item := Work;
+         Regressed       : Quality_Manager.Verification.Remediation_Request := Request;
+      begin
+         Regression_Work.Work_Id := To_Unbounded_String ("work:regression");
+         Regression_Work.Global_Remediation := To_Unbounded_String ("remediation:regression");
+         Quality_Manager.Storage.Records.Save (Store, Regression_Work, Result);
+         Regressed.Work_Id := Regression_Work.Work_Id;
+         Regressed.Baseline_Assessment := 3;
+         Regressed.Assessment_Operation := 206;
+         Regressed.Improve_Operation := 207;
+         Quality_Manager.Verification.Verify_Remediation
+           (Store, Quality, Planner, Native, Regressed, Decision, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Negative_Result
+            and then Decision.Outcome = Quality_Manager.Model.Regression,
+            "resolved work with a new regression is not verified");
+         Quality_Manager.Storage.Read (Store, "work:regression", Loaded, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then To_String (Loaded.State) = Quality_Manager.Model.Work_State'Image
+              (Quality_Manager.Model.Blocked),
+            "a regressed candidate is rejected and durably blocked");
+      end;
+
+      declare
+         Interrupted_Work : Quality_Manager.Storage.Schema.Work_Item := Work;
+         Interrupted      : Quality_Manager.Verification.Remediation_Request := Request;
+      begin
+         Interrupted_Work.Work_Id := To_Unbounded_String ("work:interrupted-assessment");
+         Interrupted_Work.Global_Remediation := To_Unbounded_String ("remediation:interrupted-assessment");
+         Quality_Manager.Storage.Records.Save (Store, Interrupted_Work, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "interrupted assessment work persisted");
+         Interrupted.Work_Id := Interrupted_Work.Work_Id;
+         Interrupted.Project_Selector := To_Unbounded_String ("9");
+         Interrupted.Assessment_Operation := 202;
+         Interrupted.Improve_Operation := 203;
+         Quality_Manager.Verification.Verify_Remediation
+           (Store, Quality, Planner, Native, Interrupted, Decision, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Invalid_Request,
+            "invalid assessment output cannot become evidence");
+         Quality_Manager.Verification.Verify_Remediation
+           (Store, Quality, Planner, Native, Interrupted, Decision, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Authorization_Required,
+            "ambiguous interrupted assessment is not blindly repeated");
+         Quality_Manager.Storage.Read (Store, "journal:202", Loaded, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then To_String (Loaded.State) = Quality_Manager.Journal.Journal_State'Image
+              (Quality_Manager.Journal.Needs_Intervention),
+            "ambiguous assessment recovery is durably escalated");
+      end;
+      Quality_Manager.Storage.Close (Store, Result);
+      Cleanup;
+   exception
+      when others =>
+         Quality_Manager.Storage.Close (Store, Result);
+         Cleanup;
+         raise;
+   end Test_Verification_Workflow;
+
    function Suite return AUnit.Test_Suites.Access_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
@@ -910,6 +1241,8 @@ package body Quality_Manager_Test_Suite is
       Result.Add_Test (Caller.Create ("bounded process adapter", Test_Process_Adapter'Access));
       Result.Add_Test (Caller.Create ("JSON CLI contracts", Test_JSON_CLI_Contracts'Access));
       Result.Add_Test (Caller.Create ("durable native dispatch", Test_Native_Dispatch'Access));
+      Result.Add_Test (Caller.Create ("independent verification", Test_Verification_Engine'Access));
+      Result.Add_Test (Caller.Create ("verification workflow", Test_Verification_Workflow'Access));
       return Result;
    end Suite;
 end Quality_Manager_Test_Suite;

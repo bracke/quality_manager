@@ -166,6 +166,7 @@ package body Quality_Manager.Storage.Records is
             & ",""native_result"":" & Q (To_String (Value.Native_Result))
             & ",""improve_result"":" & Q (To_String (Value.Improve_Result))
             & ",""regression_result"":" & Q (To_String (Value.Regression_Result))
+            & ",""candidate_revision"":" & Q (To_String (Value.Candidate_Revision))
             & ",""source_fingerprint"":" & Q (To_String (Value.Source_Fingerprint))
             & ",""policy_fingerprint"":" & Q (To_String (Value.Policy_Fingerprint))
             & ",""toolchain_fingerprint"":" & Q (To_String (Value.Toolchain_Fingerprint)) & "}"),

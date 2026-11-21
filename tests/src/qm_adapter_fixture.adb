@@ -55,7 +55,18 @@ begin
             then
                Kind := To_Unbounded_String ("check-plan");
             elsif Ada.Strings.Fixed.Index (Text, "assessment diff ") = 1 then
-               Kind := To_Unbounded_String ("assessment-comparison");
+               Ada.Text_IO.Put
+                 ("{""schema_version"":1,""kind"":""assessment-comparison""," &
+                  """project_id"":7,""status"":""comparison-available""," &
+                  """baseline_id"":" &
+                  (if Ada.Strings.Fixed.Index (Text, "assessment diff 3 2") = 1 then "3" else "1") &
+                  ",""current_id"":2,""policy_changed"":false,""changes"":" &
+                  (if Ada.Strings.Fixed.Index (Text, "assessment diff 3 2") = 1
+                   then "[{""indicator"":""TST-03"",""change"":""new-violation""," &
+                     """before"":""pass"",""after"":""violation""}]"
+                   else "[]") & "}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
             elsif Ada.Strings.Fixed.Index (Text, "doctor ") = 1 then
                Kind := To_Unbounded_String ("doctor-report");
             elsif Text = "database stats" then
@@ -127,6 +138,59 @@ begin
                      """," &
                      """result"":""success"",""diagnostics"":[],""audit_reference"":""" & Audit & """," &
                      """invocation"":""" & To_String (Invocation) & """}");
+               end;
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
+            elsif Ada.Strings.Fixed.Index (Text, "check ") = 1
+              or else Text = "assessment show 2 --json"
+            then
+               if Ada.Strings.Fixed.Index (Text, "--project 9") > 0 then
+                  Ada.Text_IO.Put ("not-json");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               end if;
+               Ada.Text_IO.Put
+                 ("{""schema_version"":1,""assessment_id"":2,""project_id"":7," &
+                  """project_path"":""/project"",""source_fingerprint"":""candidate-source""," &
+                  """policy_fingerprint"":""policy"",""toolchain_fingerprint"":""toolchain""," &
+                  """status"":""ASSESSMENT_COMPLETED"",""results"":[");
+               for Result_Index in 1 .. 33 loop
+                  if Result_Index > 1 then Ada.Text_IO.Put (","); end if;
+                  declare
+                     Number : constant String := Ada.Strings.Fixed.Trim
+                       (Natural'Image (Result_Index), Ada.Strings.Both);
+                     Indicator : constant String :=
+                       "TST-" & (if Result_Index < 10 then "0" else "") & Number;
+                  begin
+                  Ada.Text_IO.Put
+                       ("{""indicator"":""" & Indicator & """,""execution"":""succeeded""," &
+                        """compliance"":""" &
+                        (if Ada.Strings.Fixed.Index (Text, "--project 8") > 0 and then Result_Index = 1
+                         then "unknown" else "pass") &
+                        """,""applicable"":true,""summary"":""ok""," &
+                        """evidence"":""fixture"",""measurement"":{},""findings"":[]}");
+                  end;
+               end loop;
+               Ada.Text_IO.Put ("],""executions"":[]}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
+            elsif Has_State
+              and then Ada.Strings.Fixed.Index (Text, "verify --task IMP-") = 1
+            then
+               declare
+                  Failing : constant Boolean := Ada.Strings.Fixed.Index (Text, "IMP-FAIL") > 0;
+               begin
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":2,""command"":""verify"",""data"":{" &
+                     """plan_id"":""PLAN-001"",""baseline_run"":1,""verification_run"":2," &
+                     """outcome"":""" & (if Failing then "still-failing" else "verified") &
+                     """,""plan_outcome"":""" & (if Failing then "still-failing" else "verified") &
+                     """,""project_outcome"":""verified"",""comparable"":true,""new_critical"":0," &
+                     """explanation"":""fixture"",""tasks"":[{""task_id"":""" &
+                     (if Failing then "IMP-FAIL" else "IMP-001") & """,""outcome"":""" &
+                     (if Failing then "still-failing" else "verified") &
+                     """,""matched"":" & (if Failing then "0" else "1") &
+                     ",""total"":1,""explanation"":""fixture""}]}}");
                end;
                Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
                return;

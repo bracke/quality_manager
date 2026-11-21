@@ -121,3 +121,29 @@ attempt record without reacquiring the project lease or creating duplicate execu
 separate fenced lease and journal and advances only to `Awaiting_Assessment`. The warnings-as-errors test run,
 forced validation build, and GNATdoc generation passed. A live `quality-manager doctor` negotiated
 `headless-work-v1` with model_runner `a0522e83` and reported native execution available.
+
+## Phase 6 — Verification and retry engine
+
+| Task | State | Evidence |
+| --- | --- | --- |
+| P6-01 native completion gate | complete | explicit completed + integrated predicate |
+| P6-02 integrated-source identity | complete | candidate revision/source and qualified project binding |
+| P6-03 fresh assessment | complete | no-reuse check, durable run identity, ambiguity escalation |
+| P6-04 exact Improve verification | complete | exact task/revision/run invocation and task-result selection |
+| P6-05 explicit regression baseline | complete | selected baseline/current comparison with compatibility handling |
+| P6-06 full predicate | complete | `N and Q and R and F`, with independent diagnostics |
+| P6-07 failure classification | complete | unresolved, regression, evidence, policy, execution, authorization |
+| P6-08 bounded retry/replanning | complete | cause-specific actions and non-resetting attempt budget |
+| P6-09 rejection/blocking | complete | regression rejection, evidence repair, durable terminal/escalated states |
+| P6-10 acceptance tests | complete for coordinator workflow | success and negative remediation paths |
+
+The verification workflow journals the authoritative assessment and Improve verification without holding a database
+transaction across either process. Because Ada Quality does not expose a durable caller operation ID, an interruption
+at its ambiguous invoking boundary is escalated instead of blindly repeating the assessment. Improve’s exact
+task/revision/run verification is idempotently recoverable. Verification evidence is append-only and binds the
+candidate revision, source, policy, toolchain, assessment, and acceptance contract.
+
+Gate: **passed**. The 16-test suite covers verified remediation, a completed
+agent that leaves the finding unresolved, candidate regression, incomplete evidence, incompatible baselines, bounded
+retry exhaustion, durable verification records, and ambiguous-assessment recovery. The warnings-as-errors test run,
+forced validation build, and GNATdoc generation passed.
