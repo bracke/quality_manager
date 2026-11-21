@@ -1,0 +1,56 @@
+.TH QUALITY-MANAGER 1 "November 2026" "quality_manager 0.1" "User Commands"
+.SH NAME
+quality-manager \- coordinate autonomous Ada quality workflows
+.SH SYNOPSIS
+.B quality-manager
+.RI [ --config " PATH" ]
+.RI [ --format " terminal|json|markdown" ]
+.I COMMAND
+.SH DESCRIPTION
+Quality Manager persists maintenance, campaign, and release-qualification state
+while preserving the measurement, planning, approval, and execution authority of
+its upstream systems.
+.SH INSPECTION COMMANDS
+.TP
+.B doctor
+Validate configuration and negotiate the model_runner headless contract.
+.TP
+.B status, queue, approvals, history, events, recover
+Read durable coordinator state. JSON output uses schema version 1. The recover
+view reports journal state for manual reconciliation; it does not blindly repeat
+an ambiguous external operation.
+.SH WORKFLOW COMMANDS
+.TP
+.B maintenance [--project ID|PATH] [--dry-run]
+Run one restart-safe maintenance cycle.
+.TP
+.B daemon [--once] [--project ID|PATH] [--dry-run]
+Run continuous maintenance or one daemon iteration.
+.TP
+.B campaign-create DEFINITION
+Create an immutable campaign definition revision.
+.TP
+.B campaign-start|campaign-pause|campaign-resume|campaign-reconcile ID
+Control a persisted campaign.
+.TP
+.B release-create PROJECT PROFILE
+Create an immutable release candidate.
+.TP
+.B release-qualify ID
+Qualify only when current assessment and release-check evidence is available.
+.TP
+.B release-export ID OUTPUT
+Verify and export a qualified evidence bundle.
+.SH AUTHORIZATION
+.TP
+.B approve RECORD | reject RECORD
+Import an exact JSON decision conforming to approval-decision-v1.schema.json.
+The command must match the decision in the record. Decisions are append-only.
+.SH EXIT STATUS
+Zero indicates the requested operation completed. A negative quality result,
+missing evidence, incompatible contract, authorization requirement, or execution
+failure returns nonzero and retains its diagnostic evidence.
+.SH FILES
+.I config/quality-manager.toml
+is the default configuration. Generated coordinator databases and reports must
+not be committed.

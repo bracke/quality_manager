@@ -162,7 +162,11 @@ package body Quality_Manager.Storage.Records is
             & ",""content_digest"":" & Q (To_String (Value.Content_Digest))
             & ",""action"":" & Q (To_String (Value.Authorized_Action))
             & ",""policy_digest"":" & Q (To_String (Value.Policy_Digest))
-            & ",""approver"":" & Q (To_String (Value.Approver)) & "}"),
+            & ",""approver"":" & Q (To_String (Value.Approver))
+            & ",""created_at"":" & Ada.Strings.Fixed.Trim
+              (Sequence_Number'Image (Value.Created_At), Ada.Strings.Both)
+            & ",""expires_at"":" & Ada.Strings.Fixed.Trim
+              (Sequence_Number'Image (Value.Expires_At), Ada.Strings.Both) & "}"),
          Terminal => True,
          Generation => 1);
    begin

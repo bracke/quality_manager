@@ -8,6 +8,7 @@ with AUnit.Assertions; use AUnit.Assertions;
 with AUnit.Test_Caller;
 
 with Quality_Manager.CLI;
+with Quality_Manager.Approvals;
 with Quality_Manager.Campaigns;
 with Quality_Manager.Config;
 with Quality_Manager.Dispatch;
@@ -163,7 +164,107 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.CLI.Parse (Args, Options, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success, "doctor accepted");
       Assert (Options.Command = Quality_Manager.CLI.Doctor_Command, "doctor selected");
+
+      Args.Clear;
+      Args.Append ("release-create");
+      Args.Append ("7");
+      Args.Append ("release");
+      Quality_Manager.CLI.Parse (Args, Options, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Options.Command = Quality_Manager.CLI.Release_Create_Command
+         and then To_String (Options.Primary_Value) = "7"
+         and then To_String (Options.Secondary_Value) = "release",
+         "release creation retains its exact operands");
+
+      Args.Clear;
+      Args.Append ("campaign-start");
+      Quality_Manager.CLI.Parse (Args, Options, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "missing workflow operand rejected");
+
+      Args.Clear;
+      Args.Append ("status");
+      Args.Append ("unexpected");
+      Quality_Manager.CLI.Parse (Args, Options, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "read-only view rejects operands");
    end Test_CLI;
+
+   procedure Test_Operational_Control (Item : in out Fixture) is
+      pragma Unreferenced (Item);
+      Path       : constant String := "/tmp/quality-manager-operations.database";
+      Definition : constant String := "/tmp/quality-manager-approval.json";
+      Store      : Quality_Manager.Storage.Store;
+      Result     : Quality_Manager.Results.Operation_Result;
+      Output     : Unbounded_String;
+      Loaded     : Quality_Manager.Storage.Stored_Entity;
+
+      procedure Cleanup is
+      begin
+         if Ada.Directories.Exists (Path) then Ada.Directories.Delete_File (Path); end if;
+         if Ada.Directories.Exists (Definition) then Ada.Directories.Delete_File (Definition); end if;
+      end Cleanup;
+
+      procedure Write_Approval (Decision : String) is
+         File : Ada.Text_IO.File_Type;
+      begin
+         Ada.Text_IO.Create (File, Ada.Text_IO.Out_File, Definition);
+         Ada.Text_IO.Put
+           (File,
+            "{""schema_version"":1,""decision"":""" & Decision & """," &
+            """approval_id"":""approval-operator-1""," &
+            """quality_database_id"":""database-a""," &
+            """quality_project_id"":7,""canonical_path"":""/project""," &
+            """plan_id"":""PLAN-001"",""plan_revision"":2," &
+            """content_sha256"":""content-digest""," &
+            """authorized_action"":""publish""," &
+            """policy_sha256"":""policy-digest"",""approver"":""operator""," &
+            """created_at"":10,""expires_at"":100}");
+         Ada.Text_IO.Close (File);
+      end Write_Approval;
+   begin
+      Cleanup;
+      Quality_Manager.Storage.Open (Store, Path, True, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "operations store opened");
+      Output := To_Unbounded_String
+        (Quality_Manager.Reporting.Operational
+           (Store, Quality_Manager.Reporting.Overall_Status,
+            Quality_Manager.CLI.JSON_Output, Result));
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Ada.Strings.Fixed.Index (To_String (Output), """count"":0") > 0,
+         "empty operational status is valid structured output");
+      Quality_Manager.Schemas.Validate_Versioned_JSON (To_String (Output), 1, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "operational JSON is versioned");
+
+      Write_Approval ("reject");
+      Quality_Manager.Approvals.Apply_Decision (Store, Definition, True, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Invalid_Request,
+         "administrative command cannot contradict signed decision content");
+      Write_Approval ("approve");
+      Quality_Manager.Approvals.Apply_Decision (Store, Definition, True, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "exact approval record imported");
+      Quality_Manager.Storage.Read (Store, "approval:approval-operator-1", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Ada.Strings.Fixed.Index (To_String (Loaded.Payload), """expires_at"":100") > 0,
+         "persisted approval retains its audit lifetime");
+      Output := To_Unbounded_String
+        (Quality_Manager.Reporting.Operational
+           (Store, Quality_Manager.Reporting.Approval_Status,
+            Quality_Manager.CLI.JSON_Output, Result));
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Ada.Strings.Fixed.Index (To_String (Output), "approval:approval-operator-1") > 0,
+         "approval status exposes the durable decision");
+      Quality_Manager.Storage.Close (Store, Result);
+      Cleanup;
+   exception
+      when others =>
+         Quality_Manager.Storage.Close (Store, Result);
+         Cleanup;
+         raise;
+   end Test_Operational_Control;
 
    procedure Test_JSON_Contract (Item : in out Fixture) is
       pragma Unreferenced (Item);
@@ -1732,6 +1833,7 @@ package body Quality_Manager_Test_Suite is
       Result.Add_Test (Caller.Create ("configuration UTF-8", Test_Config_Encoding'Access));
       Result.Add_Test (Caller.Create ("path normalization", Test_Path_Normalization'Access));
       Result.Add_Test (Caller.Create ("strict CLI", Test_CLI'Access));
+      Result.Add_Test (Caller.Create ("operational control", Test_Operational_Control'Access));
       Result.Add_Test (Caller.Create ("versioned JSON", Test_JSON_Contract'Access));
       Result.Add_Test (Caller.Create ("doctor output", Test_Doctor_Output'Access));
       Result.Add_Test (Caller.Create ("qualified identities", Test_Identities'Access));

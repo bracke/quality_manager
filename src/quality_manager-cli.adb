@@ -13,6 +13,15 @@ package body Quality_Manager.CLI is
       & "            run one durable maintenance coordination cycle" & ASCII.LF
       & "  daemon [--once] [--project ID|PATH] [--dry-run]" & ASCII.LF
       & "            continuously schedule maintenance work" & ASCII.LF
+      & "  status | queue | approvals | history | events | recover" & ASCII.LF
+      & "            inspect durable coordinator state" & ASCII.LF
+      & "  campaign-create DEFINITION" & ASCII.LF
+      & "  campaign-start|campaign-pause|campaign-resume|campaign-reconcile ID" & ASCII.LF
+      & "  release-create PROJECT PROFILE" & ASCII.LF
+      & "  release-qualify ID" & ASCII.LF
+      & "  release-export ID OUTPUT" & ASCII.LF
+      & "  approve RECORD | reject RECORD" & ASCII.LF
+      & "            apply an exact, versioned authorization record" & ASCII.LF
       & "  help      show this help" & ASCII.LF
       & "  version   show the application version");
 
@@ -24,6 +33,7 @@ package body Quality_Manager.CLI is
       Seen_Config  : Boolean := False;
       Seen_Format  : Boolean := False;
       Seen_Project : Boolean := False;
+      Value_Count  : Natural := 0;
       Index        : Positive := Arguments.First_Index;
 
       procedure Fail (Message, Code : String) is
@@ -40,6 +50,21 @@ package body Quality_Manager.CLI is
             Seen_Command := True;
          end if;
       end Set_Command;
+
+      procedure Add_Value (Value : String) is
+      begin
+         if not Seen_Command then
+            Fail ("a command must precede its operands", "qm.cli.operand-before-command");
+         elsif Value_Count = 0 then
+            Item.Primary_Value := To_Unbounded_String (Value);
+            Value_Count := 1;
+         elsif Value_Count = 1 then
+            Item.Secondary_Value := To_Unbounded_String (Value);
+            Value_Count := 2;
+         else
+            Fail ("too many command operands", "qm.cli.too-many-operands");
+         end if;
+      end Add_Value;
 
       procedure Set_Format (Value : String) is
       begin
@@ -78,6 +103,8 @@ package body Quality_Manager.CLI is
          Config_Path     => To_Unbounded_String (Default_Config),
          Config_Explicit => False,
          Project_Selector => Null_Unbounded_String,
+         Primary_Value   => Null_Unbounded_String,
+         Secondary_Value => Null_Unbounded_String,
          Dry_Run         => False,
          Once            => False);
       Result := Make_Result (Success);
@@ -132,6 +159,40 @@ package body Quality_Manager.CLI is
                Set_Command (Maintenance_Command);
             elsif Argument = "daemon" then
                Set_Command (Daemon_Command);
+            elsif Argument = "status" then
+               Set_Command (Status_Command);
+            elsif Argument = "queue" then
+               Set_Command (Queue_Command);
+            elsif Argument = "approvals" then
+               Set_Command (Approvals_Command);
+            elsif Argument = "history" then
+               Set_Command (History_Command);
+            elsif Argument = "events" then
+               Set_Command (Events_Command);
+            elsif Argument = "recover" then
+               Set_Command (Recover_Command);
+            elsif Argument = "campaign-create" then
+               Set_Command (Campaign_Create_Command);
+            elsif Argument = "campaign-start" then
+               Set_Command (Campaign_Start_Command);
+            elsif Argument = "campaign-pause" then
+               Set_Command (Campaign_Pause_Command);
+            elsif Argument = "campaign-resume" then
+               Set_Command (Campaign_Resume_Command);
+            elsif Argument = "campaign-reconcile" then
+               Set_Command (Campaign_Reconcile_Command);
+            elsif Argument = "release-create" then
+               Set_Command (Release_Create_Command);
+            elsif Argument = "release-qualify" then
+               Set_Command (Release_Qualify_Command);
+            elsif Argument = "release-export" then
+               Set_Command (Release_Export_Command);
+            elsif Argument = "approve" then
+               Set_Command (Approve_Command);
+            elsif Argument = "reject" then
+               Set_Command (Reject_Command);
+            elsif Argument'Length > 0 and then Argument (Argument'First) /= '-' then
+               Add_Value (Argument);
             else
                Fail ("unknown argument: " & Argument, "qm.cli.unknown-argument");
             end if;
@@ -146,6 +207,22 @@ package body Quality_Manager.CLI is
         and then Item.Command not in Maintenance_Command | Daemon_Command
       then
          Fail ("--project requires maintenance or daemon", "qm.cli.option-scope");
+      elsif Result.Kind = Success then
+         declare
+            Required : constant Natural :=
+              (case Item.Command is
+                  when Campaign_Create_Command | Campaign_Start_Command | Campaign_Pause_Command
+                     | Campaign_Resume_Command | Campaign_Reconcile_Command | Release_Qualify_Command
+                     | Approve_Command | Reject_Command => 1,
+                  when Release_Create_Command | Release_Export_Command => 2,
+                  when others => 0);
+         begin
+            if Value_Count /= Required then
+               Fail
+                 ("command requires" & Natural'Image (Required) & " operand(s)",
+                  "qm.cli.operand-count");
+            end if;
+         end;
       end if;
    exception
       when others =>

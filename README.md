@@ -8,7 +8,8 @@ the evidence, approval, publication, or workspace semantics of those systems.
 The implementation currently includes the Phase 1 foundation, durable Phase 2
 storage and recovery, Phase 3 quality/planning adapters, Phase 5 native
 execution integration, Phase 6 independent verification, and Phase 7 durable
-maintenance scheduling, plus Phase 8 improvement campaigns. The model_runner path in
+maintenance scheduling, Phase 8 improvement campaigns, Phase 9 release
+qualification, and Phase 10 operational control. The model_runner path in
 `config/quality-manager.toml`
 must identify an implementation of `headless-work-v1`.
 
@@ -18,6 +19,9 @@ alr -n build
 ./bin/quality-manager --format json doctor
 ./bin/quality-manager maintenance --dry-run
 ./bin/quality-manager daemon --once --dry-run
+./bin/quality-manager --format json status
+./bin/quality-manager queue
+./bin/quality-manager approvals
 alr test
 ```
 
@@ -44,3 +48,10 @@ Qualification requires exact identity alignment, all 33 indicators complete and
 passing, reproducible validation builds, AUnit, applicable proof, release checks,
 and at least 90% production-line coverage. Evidence exports are accepted only
 after their canonical SHA-256 envelope is revalidated.
+
+Phase 10 exposes read-only status, queue, approval, history, event, and recovery
+views in terminal, JSON, and Markdown formats. Administrative `approve` and
+`reject` commands import a versioned decision record conforming to
+`schemas/approval-decision-v1.schema.json`; the command and record decision must
+match. Campaign and release lifecycle commands are listed by `quality-manager
+help`. See `docs/quality-manager.1` for the operator reference.

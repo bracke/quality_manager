@@ -7,7 +7,27 @@ package Quality_Manager.CLI is
      (Index_Type => Positive, Element_Type => String);
 
    type Command_Kind is
-     (Help_Command, Version_Command, Doctor_Command, Maintenance_Command, Daemon_Command);
+     (Help_Command,
+      Version_Command,
+      Doctor_Command,
+      Maintenance_Command,
+      Daemon_Command,
+      Status_Command,
+      Queue_Command,
+      Approvals_Command,
+      History_Command,
+      Events_Command,
+      Recover_Command,
+      Campaign_Create_Command,
+      Campaign_Start_Command,
+      Campaign_Pause_Command,
+      Campaign_Resume_Command,
+      Campaign_Reconcile_Command,
+      Release_Create_Command,
+      Release_Qualify_Command,
+      Release_Export_Command,
+      Approve_Command,
+      Reject_Command);
    type Output_Format is (Terminal_Output, JSON_Output, Markdown_Output);
 
    type Options is record
@@ -16,6 +36,8 @@ package Quality_Manager.CLI is
       Config_Path      : Ada.Strings.Unbounded.Unbounded_String;
       Config_Explicit  : Boolean := False;
       Project_Selector : Ada.Strings.Unbounded.Unbounded_String;
+      Primary_Value    : Ada.Strings.Unbounded.Unbounded_String;
+      Secondary_Value  : Ada.Strings.Unbounded.Unbounded_String;
       Dry_Run          : Boolean := False;
       Once             : Boolean := False;
    end record;

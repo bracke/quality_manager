@@ -218,3 +218,22 @@ failure and never publishes a tag, pushes a branch, or releases an Alire crate.
 Gate: **passed**. The 21-test suite covers below-90% rejection, complete qualification, evidence export,
 post-qualification invalidation, new candidate generation, and interrupted check adoption. Warnings-as-errors, forced
 validation, and GNATdoc passed.
+
+## Phase 10 — Operational control and reporting
+
+| Task | State | Evidence |
+| --- | --- | --- |
+| P10-01 status views | complete | terminal, JSON, and Markdown durable-state views |
+| P10-02 queue inspection | complete | work, dispatch, and attempt records |
+| P10-03 authorization inspection | complete | append-only approval view |
+| P10-04 approve/reject administration | complete | versioned exact decision import and mismatch rejection |
+| P10-05 recovery/reconciliation | complete | recovery journal view and campaign reconciliation command |
+| P10-06 workflow history | complete | cycle, campaign, release, and verification history |
+| P10-07 event export | complete | versioned JSON event stream |
+| P10-08 doctor diagnostics | complete | configuration and live model_runner capability negotiation |
+| P10-09 completion and manpage | complete | Bash completion and `docs/quality-manager.1` |
+| P10-10 CLI acceptance | complete | strict operand and structured-output tests |
+
+Operational views are read-only and fail if the coordinator database is absent or incompatible. Authorization
+records bind the qualified project, exact Improve revision and content digest, policy digest, action, approver, and
+lifetime. Rejections are append-only audit events and cannot remove or rewrite an earlier approval.
