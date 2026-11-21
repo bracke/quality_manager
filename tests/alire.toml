@@ -1,0 +1,31 @@
+name = "quality_manager_tests"
+description = "AUnit tests for Quality Manager"
+version = "0.1.0-dev"
+executables = ["quality_manager_tests"]
+
+[[depends-on]]
+gnat_native = "=15.2.1"
+
+[[depends-on]]
+aunit = "^26.0.0"
+
+[[depends-on]]
+quality_manager = "*"
+
+[[pins]]
+quality_manager = { path = ".." }
+
+[[pins]]
+config = { path = "../../config" }
+
+[[pins]]
+jsonlib = { path = "../../jsonlib" }
+
+[[pins]]
+representation = { path = "../../representation" }
+
+[[pins]]
+cryptolib = { path = "../../cryptolib" }
+
+[build-profiles]
+"*" = "development"

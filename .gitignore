@@ -1,0 +1,11 @@
+/alire/
+/.build/
+/bin/
+/obj/
+/config/*_config.*
+/tests/alire/
+/tests/bin/
+/tests/config/
+/tests/obj/
+*.ali
+*.o

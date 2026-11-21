@@ -1,0 +1,14 @@
+[coordinator]
+database = "var/quality-manager.db"
+
+[quality]
+database = ""
+
+[scheduler]
+assessment_workers = 4
+agent_workers = 1
+maximum_task_seconds = 3600
+remediation_attempts = 2
+
+[autonomy]
+dry_run = true
