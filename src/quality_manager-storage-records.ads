@@ -9,6 +9,11 @@ package Quality_Manager.Storage.Records is
 
    procedure Save
      (Item   : in out Quality_Manager.Storage.Store;
+      Value  : Quality_Manager.Storage.Schema.Cycle;
+      Result : out Quality_Manager.Results.Operation_Result);
+
+   procedure Save
+     (Item   : in out Quality_Manager.Storage.Store;
       Value  : Quality_Manager.Storage.Schema.Work_Item;
       Result : out Quality_Manager.Results.Operation_Result);
 

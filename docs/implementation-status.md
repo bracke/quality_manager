@@ -147,3 +147,27 @@ Gate: **passed**. The 16-test suite covers verified remediation, a completed
 agent that leaves the finding unresolved, candidate regression, incomplete evidence, incompatible baselines, bounded
 retry exhaustion, durable verification records, and ambiguous-assessment recovery. The warnings-as-errors test run,
 forced validation build, and GNATdoc generation passed.
+
+## Phase 7 — Scheduler and continuous maintenance
+
+| Task | State | Evidence |
+| --- | --- | --- |
+| P7-01 persistent priority selection | complete | six normative bands, age and stable-ID tie breaking |
+| P7-02 protected worker coordination | complete | Ada protected pending/active queues |
+| P7-03 inventory synchronization | complete | validated qualified Ada Quality project inventory |
+| P7-04 source/policy/toolchain detection | complete | explicit evidence-identity due-reason classifier |
+| P7-05 due assessment scheduling | complete | enabled projects receive durable assessment work |
+| P7-06 maintenance discovery | complete | independent project cycles and assessment objectives |
+| P7-07 reservations and fairness | complete | global assessment/agent bounds and project writer exclusion |
+| P7-08 pause/resume/shutdown | complete | protected stop state; no dispatch while stopping |
+| P7-09 daemon and one-shot modes | complete | `maintenance`, `daemon`, and `daemon --once` CLI routes |
+| P7-10 repeated/multi-project tests | complete | restart rebuild, deduplication, blocked isolation, three-project inventory |
+
+The persisted `Queued` state is authoritative; the protected queue is rebuilt by scanning committed work. Eligibility
+uses fail-closed facts and records the first failed condition in the atomic blocked transition event. Reconciliation
+does not enqueue an already-active identity. Current project inventory is the only replaceable record class;
+historical cycles, events, attempts, and verification evidence remain append-only.
+
+Gate: **passed**. The 18-test suite covers deterministic priority, resource limits, restart reconstruction,
+eligibility persistence, cooperative pause/resume, qualified inventory, disabled-project isolation, and multi-project
+assessment scheduling. The warnings-as-errors run, forced validation build, and GNATdoc generation passed.

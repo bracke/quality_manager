@@ -5,6 +5,7 @@ database = "var/quality-manager.db"
 database = ""
 
 [integrations]
+ada_quality = "../ada_quality/bin/ada-quality"
 model_runner = "../model_runner/bin/model_runner"
 
 [scheduler]

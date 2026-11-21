@@ -61,11 +61,23 @@ package Quality_Manager.Storage is
       Value  : Stored_Entity;
       Result : out Quality_Manager.Results.Operation_Result);
 
+   procedure Put_Current
+     (Item   : in out Store;
+      Value  : Stored_Entity;
+      Result : out Quality_Manager.Results.Operation_Result);
+
    procedure Read
      (Item       : in out Store;
       Entity_Key : String;
       Value      : out Stored_Entity;
       Result     : out Quality_Manager.Results.Operation_Result);
+
+   procedure List
+     (Item    : in out Store;
+      Kind    : Record_Kind;
+      Values  : out Entity_Vectors.Vector;
+      Maximum : Positive;
+      Result  : out Quality_Manager.Results.Operation_Result);
 
    procedure Transition_Work
      (Item           : in out Store;

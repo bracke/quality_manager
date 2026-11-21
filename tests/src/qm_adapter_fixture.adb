@@ -48,7 +48,15 @@ begin
          declare
             Text : constant String := To_String (Invocation);
          begin
-            if Ada.Strings.Fixed.Index (Text, "project ") = 1 then
+            if Ada.Strings.Fixed.Index (Text, "project list") = 1 then
+               Ada.Text_IO.Put
+                 ("{""schema_version"":1,""kind"":""project-list"",""projects"":[" &
+                  "{""id"":7,""path"":""/project"",""enabled"":true,""removed"":false}," &
+                  "{""id"":8,""path"":""/disabled"",""enabled"":false,""removed"":false}," &
+                  "{""id"":9,""path"":""/second"",""enabled"":true,""removed"":false}]}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
+            elsif Ada.Strings.Fixed.Index (Text, "project ") = 1 then
                Kind := To_Unbounded_String ("project-list");
             elsif Ada.Strings.Fixed.Index (Text, "check ") = 1
               and then Ada.Strings.Fixed.Index (Text, "--dry-run") > 0

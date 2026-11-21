@@ -6,7 +6,8 @@ package Quality_Manager.CLI is
    package Argument_Vectors is new Ada.Containers.Indefinite_Vectors
      (Index_Type => Positive, Element_Type => String);
 
-   type Command_Kind is (Help_Command, Version_Command, Doctor_Command);
+   type Command_Kind is
+     (Help_Command, Version_Command, Doctor_Command, Maintenance_Command, Daemon_Command);
    type Output_Format is (Terminal_Output, JSON_Output, Markdown_Output);
 
    type Options is record
@@ -14,6 +15,9 @@ package Quality_Manager.CLI is
       Format           : Output_Format := Terminal_Output;
       Config_Path      : Ada.Strings.Unbounded.Unbounded_String;
       Config_Explicit  : Boolean := False;
+      Project_Selector : Ada.Strings.Unbounded.Unbounded_String;
+      Dry_Run          : Boolean := False;
+      Once             : Boolean := False;
    end record;
 
    procedure Parse

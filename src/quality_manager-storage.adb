@@ -442,6 +442,69 @@ package body Quality_Manager.Storage is
          Result := Make_Result (Integrity_Error, "coordinator identity space exhausted", "qm.storage.ids");
    end Put;
 
+   procedure Put_Current
+     (Item   : in out Store;
+      Value  : Stored_Entity;
+      Result : out Operation_Result) is
+      Tx       : Database.Transactions.Transaction;
+      Existing : Stored_Entity;
+      Status   : Database.Status.Result;
+      Updated  : Stored_Entity := Value;
+      New_Row  : Boolean := False;
+   begin
+      if Value.Kind /= Project_Record then
+         Result := Make_Result
+           (Authorization_Required, "only current project inventory may be replaced", "qm.storage.current-kind");
+         return;
+      end if;
+      Result := Validate_Entity (Value);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Begin_Write (Item, Tx, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Find_In_Transaction (Item, Tx, To_String (Value.Entity_Key), Existing, Status);
+      if Status.Code = Database.Status.Not_Found then
+         Updated.Internal_Id := Item.Next_Id;
+         New_Row := True;
+         Status := Entity_Tables.Insert (Tx, Item.DB, Item.Table, Updated);
+      elsif not Database.Status.Is_Ok (Status) then
+         Database.Transactions.Rollback (Tx);
+         Result := Database_Failure (Status, "read current coordinator entity");
+         return;
+      elsif Existing.Kind /= Value.Kind or else Existing.Terminal then
+         Database.Transactions.Rollback (Tx);
+         Result := Make_Result (Integrity_Error, "current entity kind mismatch", "qm.storage.current-conflict");
+         return;
+      elsif Same (Existing, Value) then
+         Database.Transactions.Rollback (Tx);
+         Result := Make_Result (Success);
+         return;
+      else
+         Updated.Internal_Id := Existing.Internal_Id;
+         Updated.Generation := Existing.Generation + 1;
+         Status := Entity_Tables.Update (Tx, Item.DB, Item.Table, Updated);
+      end if;
+      if Database.Status.Is_Ok (Status) then
+         Status := Database.Transactions.Commit (Tx);
+      else
+         Database.Transactions.Rollback (Tx);
+      end if;
+      if Database.Status.Is_Ok (Status) then
+         if New_Row then
+            Item.Next_Id := Item.Next_Id + 1;
+         end if;
+         Result := Make_Result (Success);
+      else
+         Result := Database_Failure (Status, "persist current coordinator entity");
+      end if;
+   exception
+      when Constraint_Error =>
+         Result := Make_Result (Integrity_Error, "coordinator generation exhausted", "qm.storage.generation");
+   end Put_Current;
+
    procedure Read
      (Item       : in out Store;
       Entity_Key : String;
@@ -461,6 +524,42 @@ package body Quality_Manager.Storage is
          then Make_Result (Success)
          else Database_Failure (Status, "read coordinator entity"));
    end Read;
+
+   procedure List
+     (Item    : in out Store;
+      Kind    : Record_Kind;
+      Values  : out Entity_Vectors.Vector;
+      Maximum : Positive;
+      Result  : out Operation_Result) is
+      Tx     : Database.Transactions.Transaction;
+      Cursor : Entity_Tables.Cursor;
+      Status : Database.Status.Result;
+      Filter : constant Database.Predicates.Predicate :=
+        Database.Predicates.Column_Equals
+          (1, Database.Values.From_Text (Encode (Image (Kind))));
+   begin
+      Values.Clear;
+      Begin_Read (Item, Tx, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Status := Entity_Tables.Scan (Tx, Item.DB, Item.Table, Filter, Cursor);
+      while Database.Status.Is_Ok (Status) and then Entity_Tables.Has_Element (Cursor) loop
+         if Natural (Values.Length) = Maximum then
+            Database.Transactions.Rollback (Tx);
+            Result := Make_Result
+              (Integrity_Error, "coordinator record scan limit exceeded", "qm.storage.scan-limit");
+            return;
+         end if;
+         Values.Append (Entity_Tables.Element (Cursor));
+         Status := Entity_Tables.Next (Tx, Item.DB, Item.Table, Filter, Cursor);
+      end loop;
+      Database.Transactions.Rollback (Tx);
+      Result :=
+        (if Database.Status.Is_Ok (Status)
+         then Make_Result (Success)
+         else Database_Failure (Status, "scan coordinator records"));
+   end List;
 
    procedure Transition_Work
      (Item           : in out Store;

@@ -9,6 +9,10 @@ package body Quality_Manager.CLI is
       & ASCII.LF & ASCII.LF
       & "Commands:" & ASCII.LF
       & "  doctor    validate the read-only coordinator foundation" & ASCII.LF
+      & "  maintenance [--project ID|PATH] [--dry-run]" & ASCII.LF
+      & "            run one durable maintenance coordination cycle" & ASCII.LF
+      & "  daemon [--once] [--project ID|PATH] [--dry-run]" & ASCII.LF
+      & "            continuously schedule maintenance work" & ASCII.LF
       & "  help      show this help" & ASCII.LF
       & "  version   show the application version");
 
@@ -19,6 +23,7 @@ package body Quality_Manager.CLI is
       Seen_Command : Boolean := False;
       Seen_Config  : Boolean := False;
       Seen_Format  : Boolean := False;
+      Seen_Project : Boolean := False;
       Index        : Positive := Arguments.First_Index;
 
       procedure Fail (Message, Code : String) is
@@ -71,7 +76,10 @@ package body Quality_Manager.CLI is
         (Command         => Help_Command,
          Format          => Terminal_Output,
          Config_Path     => To_Unbounded_String (Default_Config),
-         Config_Explicit => False);
+         Config_Explicit => False,
+         Project_Selector => Null_Unbounded_String,
+         Dry_Run         => False,
+         Once            => False);
       Result := Make_Result (Success);
 
       if Arguments.Is_Empty then
@@ -100,12 +108,30 @@ package body Quality_Manager.CLI is
                end if;
             elsif Argument'Length > 9 and then Argument (Argument'First .. Argument'First + 8) = "--format=" then
                Set_Format (Argument (Argument'First + 9 .. Argument'Last));
+            elsif Argument = "--project" then
+               if Seen_Project then
+                  Fail ("--project may be supplied only once", "qm.cli.duplicate-option");
+               elsif Index = Arguments.Last_Index then
+                  Fail ("--project requires a selector", "qm.cli.missing-value");
+               else
+                  Index := Index + 1;
+                  Item.Project_Selector := To_Unbounded_String (Arguments (Index));
+                  Seen_Project := True;
+               end if;
+            elsif Argument = "--dry-run" then
+               Item.Dry_Run := True;
+            elsif Argument = "--once" then
+               Item.Once := True;
             elsif Argument = "--help" or else Argument = "-h" or else Argument = "help" then
                Set_Command (Help_Command);
             elsif Argument = "--version" or else Argument = "version" then
                Set_Command (Version_Command);
             elsif Argument = "doctor" then
                Set_Command (Doctor_Command);
+            elsif Argument = "maintenance" then
+               Set_Command (Maintenance_Command);
+            elsif Argument = "daemon" then
+               Set_Command (Daemon_Command);
             else
                Fail ("unknown argument: " & Argument, "qm.cli.unknown-argument");
             end if;
@@ -113,6 +139,14 @@ package body Quality_Manager.CLI is
          exit when Result.Kind /= Success;
          Index := Index + 1;
       end loop;
+      if Result.Kind = Success and then Item.Once and then Item.Command /= Daemon_Command then
+         Fail ("--once is valid only with daemon", "qm.cli.option-scope");
+      elsif Result.Kind = Success
+        and then Length (Item.Project_Selector) > 0
+        and then Item.Command not in Maintenance_Command | Daemon_Command
+      then
+         Fail ("--project requires maintenance or daemon", "qm.cli.option-scope");
+      end if;
    exception
       when others =>
          Result := Make_Result

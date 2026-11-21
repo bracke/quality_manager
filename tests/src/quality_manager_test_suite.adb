@@ -18,9 +18,12 @@ with Quality_Manager.Integrations.Quality;
 with Quality_Manager.Integrations.Runner;
 with Quality_Manager.Integrations.Summary;
 with Quality_Manager.Journal;
+with Quality_Manager.Maintenance;
 with Quality_Manager.Model;
 with Quality_Manager.Reporting;
 with Quality_Manager.Results;
+with Quality_Manager.Scheduler;
+with Quality_Manager.Priorities;
 with Quality_Manager.Schemas;
 with Quality_Manager.Storage.Schema;
 with Quality_Manager.Storage.Migrations;
@@ -37,6 +40,8 @@ package body Quality_Manager_Test_Suite is
    use type Quality_Manager.Model.Work_State;
    use type Quality_Manager.Model.Outcome_Kind;
    use type Quality_Manager.Verification.Retry_Action;
+   use type Quality_Manager.Scheduler.Work_Resource;
+   use type Quality_Manager.Maintenance.Assessment_Reason;
 
    package Caller is new AUnit.Test_Caller (Fixture);
 
@@ -137,7 +142,16 @@ package body Quality_Manager_Test_Suite is
       Args.Clear;
       Args.Append ("maintenance");
       Quality_Manager.CLI.Parse (Args, Options, Result);
-      Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "unimplemented mutation command rejected");
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Options.Command = Quality_Manager.CLI.Maintenance_Command,
+         "one-shot maintenance command is accepted");
+
+      Args.Clear;
+      Args.Append ("--once");
+      Args.Append ("maintenance");
+      Quality_Manager.CLI.Parse (Args, Options, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "daemon-only option scope is enforced");
 
       Args.Clear;
       Args.Append ("doctor");
@@ -286,6 +300,27 @@ package body Quality_Manager_Test_Suite is
          Remove (Path & ".lock");
       end Cleanup;
    begin
+      Assert
+        (Quality_Manager.Maintenance.Due_Reason
+           ((Assessment_Run => 4, Assessment_Complete => True,
+             Previous_Source => To_Unbounded_String ("source-a"),
+             Current_Source => To_Unbounded_String ("source-b"),
+             Previous_Policy => To_Unbounded_String ("policy"),
+             Current_Policy => To_Unbounded_String ("policy"),
+             Previous_Toolchain => To_Unbounded_String ("toolchain"),
+             Current_Toolchain => To_Unbounded_String ("toolchain"), Refresh_Due => False))
+         = Quality_Manager.Maintenance.Source_Changed,
+         "source identity changes make authoritative assessment due");
+      Assert
+        (not Quality_Manager.Maintenance.Assessment_Due
+           ((Assessment_Run => 4, Assessment_Complete => True,
+             Previous_Source => To_Unbounded_String ("source"),
+             Current_Source => To_Unbounded_String ("source"),
+             Previous_Policy => To_Unbounded_String ("policy"),
+             Current_Policy => To_Unbounded_String ("policy"),
+             Previous_Toolchain => To_Unbounded_String ("toolchain"),
+             Current_Toolchain => To_Unbounded_String ("toolchain"), Refresh_Due => False)),
+         "compatible current evidence is reusable");
       Cleanup;
       Quality_Manager.Storage.Open (Store, Path, True, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success, "persistent store created: " &
@@ -606,7 +641,7 @@ package body Quality_Manager_Test_Suite is
          Quality_Manager.Integrations.Quality.List_Projects (Quality_Adapter, Response);
          Assert
            (Response.Status.Kind = Quality_Manager.Results.Success
-            and then Ada.Strings.Fixed.Index (To_String (Response.Document), "project list --json") > 0,
+            and then Ada.Strings.Fixed.Index (To_String (Response.Document), """projects""") > 0,
             "Ada Quality project inventory requires project-list-v1");
          Quality_Manager.Integrations.Quality.Plan_Check
            (Quality_Adapter, "7", "ci", False, Response);
@@ -1224,6 +1259,174 @@ package body Quality_Manager_Test_Suite is
          raise;
    end Test_Verification_Workflow;
 
+   procedure Test_Durable_Scheduler (Item : in out Fixture) is
+      pragma Unreferenced (Item);
+      Path      : constant String := "/tmp/quality-manager-phase7.database";
+      Store     : aliased Quality_Manager.Storage.Store;
+      Scheduler : Quality_Manager.Scheduler.Scheduler_Type;
+      Result    : Quality_Manager.Results.Operation_Result;
+      Work_Id   : Unbounded_String;
+      Resource  : Quality_Manager.Scheduler.Work_Resource;
+      Found     : Boolean;
+      Ready     : Boolean;
+      Reason    : Unbounded_String;
+      Loaded    : Quality_Manager.Storage.Stored_Entity;
+      Project_1 : constant Quality_Manager.Identities.Project_Key :=
+        (To_Unbounded_String ("database-a"), 1, To_Unbounded_String ("/project/one"));
+      Project_2 : constant Quality_Manager.Identities.Project_Key :=
+        (To_Unbounded_String ("database-a"), 2, To_Unbounded_String ("/project/two"));
+      Work_1 : constant Quality_Manager.Storage.Schema.Work_Item :=
+        (Work_Id => To_Unbounded_String ("work:scheduler:one"),
+         Global_Remediation => To_Unbounded_String ("remediation:one"),
+         Project => Project_1, Origin => Quality_Manager.Model.Maintenance,
+         Finding_Identities => To_Unbounded_String ("AQ-01"), Priority => 510,
+         Improve_Plan_Id => To_Unbounded_String ("plan-1"), Improve_Revision => 1,
+         Improve_Task_Id => To_Unbounded_String ("task-1"), State => Quality_Manager.Model.Queued,
+         Outcome => Quality_Manager.Model.No_Outcome);
+      Work_2 : constant Quality_Manager.Storage.Schema.Work_Item :=
+        (Work_Id => To_Unbounded_String ("work:scheduler:two"),
+         Global_Remediation => To_Unbounded_String ("remediation:two"),
+         Project => Project_2, Origin => Quality_Manager.Model.Campaign,
+         Finding_Identities => To_Unbounded_String ("TST-03"), Priority => 150,
+         Improve_Plan_Id => To_Unbounded_String ("plan-2"), Improve_Revision => 1,
+         Improve_Task_Id => To_Unbounded_String ("task-2"), State => Quality_Manager.Model.Queued,
+         Outcome => Quality_Manager.Model.No_Outcome);
+
+      procedure Cleanup is
+      begin
+         if Ada.Directories.Exists (Path) then
+            Ada.Directories.Delete_File (Path);
+         end if;
+      end Cleanup;
+   begin
+      Quality_Manager.Scheduler.Evaluate_Eligibility
+        ((Project_Enabled => True, Project_Identity_Valid => True, Task_Nonterminal => True,
+          Dependencies_Satisfied => True, Evidence_Applicable => True, Plan_Current => True,
+          Approval_Valid => False, Native_Task_Ready => True, Budget_Available => True,
+          Project_Lock_Available => True, Autonomy_Permits => True), Ready, Reason);
+      Assert (not Ready and then To_String (Reason) = "approval-missing-or-stale",
+              "missing eligibility information is a specific blocked reason");
+
+      Quality_Manager.Scheduler.Initialize (Scheduler);
+      Quality_Manager.Scheduler.Enqueue_Work
+        (Scheduler, "work:low", "project:one", Quality_Manager.Priorities.Campaign_Work,
+         1, Quality_Manager.Scheduler.Agent_Resource);
+      Quality_Manager.Scheduler.Enqueue_Work
+        (Scheduler, "work:critical", "project:two", Quality_Manager.Priorities.Critical_Regression,
+         2, Quality_Manager.Scheduler.Agent_Resource);
+      Quality_Manager.Scheduler.Take_Next (Scheduler, Work_Id, Resource, Found);
+      Assert (Found and then To_String (Work_Id) = "work:critical",
+              "critical regressions sort before older campaign work");
+      Quality_Manager.Scheduler.Take_Next (Scheduler, Work_Id, Resource, Found);
+      Assert (not Found, "global agent execution limit is enforced");
+      Quality_Manager.Scheduler.Complete (Scheduler, "work:critical");
+      Quality_Manager.Scheduler.Take_Next (Scheduler, Work_Id, Resource, Found);
+      Assert (Found and then To_String (Work_Id) = "work:low", "released capacity permits the next task");
+      Quality_Manager.Scheduler.Request_Stop (Scheduler);
+      Assert (Quality_Manager.Scheduler.Is_Stopping (Scheduler), "scheduler stop is cooperative and observable");
+
+      Cleanup;
+      Quality_Manager.Storage.Open (Store, Path, True, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "scheduler store opened");
+      Quality_Manager.Storage.Records.Save (Store, Work_1, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "first queued work persisted");
+      Quality_Manager.Storage.Records.Save (Store, Work_2, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "second queued work persisted");
+      Quality_Manager.Scheduler.Initialize (Scheduler);
+      Quality_Manager.Scheduler.Configure (Scheduler, Store'Unchecked_Access, 4, 1);
+      Quality_Manager.Scheduler.Dispatch_Due (Scheduler);
+      Assert
+        (Quality_Manager.Scheduler.Last_Result (Scheduler).Kind = Quality_Manager.Results.Success
+         and then Quality_Manager.Scheduler.Pending_Count (Scheduler) = 2,
+         "restart reconstructs the in-memory queue from committed queued work");
+      Quality_Manager.Scheduler.Take_Next (Scheduler, Work_Id, Resource, Found);
+      Assert (Found and then To_String (Work_Id) = "work:scheduler:one",
+              "persisted priority ordering is deterministic");
+      Quality_Manager.Scheduler.Reconcile (Scheduler);
+      Assert (Quality_Manager.Scheduler.Pending_Count (Scheduler) = 1,
+              "reconciliation does not duplicate active execution");
+      Quality_Manager.Scheduler.Evaluate_And_Queue
+        (Scheduler, "work:scheduler:two",
+         (Project_Enabled => True, Project_Identity_Valid => True, Task_Nonterminal => True,
+          Dependencies_Satisfied => True, Evidence_Applicable => True, Plan_Current => True,
+          Approval_Valid => False, Native_Task_Ready => True, Budget_Available => True,
+          Project_Lock_Available => True, Autonomy_Permits => True));
+      Quality_Manager.Storage.Read (Store, "work:scheduler:two", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Loaded.State) = Quality_Manager.Model.Work_State'Image
+           (Quality_Manager.Model.Blocked)
+         and then Quality_Manager.Scheduler.Pending_Count (Scheduler) = 0,
+         "failed eligibility is persisted with no stale queue entry");
+      Quality_Manager.Scheduler.Resume (Scheduler);
+      Assert (not Quality_Manager.Scheduler.Is_Stopping (Scheduler), "paused scheduling can resume");
+      Quality_Manager.Storage.Close (Store, Result);
+      Cleanup;
+   exception
+      when others =>
+         Quality_Manager.Storage.Close (Store, Result);
+         Cleanup;
+         raise;
+   end Test_Durable_Scheduler;
+
+   procedure Test_Maintenance_Cycle (Item : in out Fixture) is
+      pragma Unreferenced (Item);
+      Path      : constant String := "/tmp/quality-manager-maintenance.database";
+      Store     : aliased Quality_Manager.Storage.Store;
+      Scheduler : aliased Quality_Manager.Scheduler.Scheduler_Type;
+      Quality   : Quality_Manager.Integrations.Quality.Adapter;
+      Context   : Quality_Manager.Maintenance.Context;
+      Result    : Quality_Manager.Results.Operation_Result;
+      Values    : Quality_Manager.Storage.Entity_Vectors.Vector;
+
+      procedure Cleanup is
+      begin
+         if Ada.Directories.Exists (Path) then
+            Ada.Directories.Delete_File (Path);
+         end if;
+      end Cleanup;
+   begin
+      Cleanup;
+      Quality_Manager.Storage.Open (Store, Path, True, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "maintenance store opened");
+      Quality_Manager.Scheduler.Initialize (Scheduler);
+      Quality_Manager.Scheduler.Configure (Scheduler, Store'Unchecked_Access, 4, 1);
+      Quality_Manager.Integrations.Quality.Initialize
+        (Quality, "./bin/qm_adapter_fixture", "quality.db");
+      Quality_Manager.Maintenance.Initialize
+        (Context, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality);
+      Quality_Manager.Maintenance.Run_Cycle (Context, "", False, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Quality_Manager.Scheduler.Pending_Count (Scheduler) = 2,
+         "maintenance inventory schedules due assessment work without blocking on disabled projects: "
+         & Quality_Manager.Results.Message (Result)
+         & " pending=" & Natural'Image (Quality_Manager.Scheduler.Pending_Count (Scheduler)));
+      Quality_Manager.Storage.List
+        (Store, Quality_Manager.Storage.Project_Record, Values, 10, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success and then Natural (Values.Length) = 3,
+              "qualified project inventory is synchronized across multiple projects");
+      Quality_Manager.Storage.List
+        (Store, Quality_Manager.Storage.Cycle_Record, Values, 10, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success and then Natural (Values.Length) = 3,
+              "each selected project has independent durable cycle state");
+      Quality_Manager.Storage.List
+        (Store, Quality_Manager.Storage.Work_Item_Record, Values, 10, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Natural (Values.Length) = 2
+         and then To_String (Values.First_Element.State) = Quality_Manager.Model.Work_State'Image
+           (Quality_Manager.Model.Queued),
+         "due assessment is committed before entering the in-memory scheduler");
+      Quality_Manager.Storage.Close (Store, Result);
+      Cleanup;
+   exception
+      when others =>
+         Quality_Manager.Storage.Close (Store, Result);
+         Cleanup;
+         raise;
+   end Test_Maintenance_Cycle;
+
    function Suite return AUnit.Test_Suites.Access_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
@@ -1243,6 +1446,8 @@ package body Quality_Manager_Test_Suite is
       Result.Add_Test (Caller.Create ("durable native dispatch", Test_Native_Dispatch'Access));
       Result.Add_Test (Caller.Create ("independent verification", Test_Verification_Engine'Access));
       Result.Add_Test (Caller.Create ("verification workflow", Test_Verification_Workflow'Access));
+      Result.Add_Test (Caller.Create ("durable scheduler", Test_Durable_Scheduler'Access));
+      Result.Add_Test (Caller.Create ("maintenance cycle", Test_Maintenance_Cycle'Access));
       return Result;
    end Suite;
 end Quality_Manager_Test_Suite;

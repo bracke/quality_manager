@@ -1,4 +1,5 @@
 with Ada.Command_Line;
+with Ada.Exceptions;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Text_IO;
 
@@ -7,6 +8,7 @@ with Quality_Manager.CLI;
 with Quality_Manager.Config;
 with Quality_Manager.Integrations.JSON_CLI;
 with Quality_Manager.Integrations.Runner;
+with Quality_Manager.Maintenance;
 with Quality_Manager.Reporting;
 with Quality_Manager.Results;
 
@@ -56,5 +58,28 @@ begin
                Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
             end if;
          end;
+      when Quality_Manager.CLI.Maintenance_Command =>
+         begin
+            Quality_Manager.Maintenance.Run_Cycle
+              (To_String (Options.Project_Selector), Options.Dry_Run);
+         exception
+            when Error : Quality_Manager.Maintenance.Maintenance_Error =>
+               Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Ada.Exceptions.Exception_Message (Error));
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         end;
+      when Quality_Manager.CLI.Daemon_Command =>
+         loop
+            begin
+               Quality_Manager.Maintenance.Run_Cycle
+                 (To_String (Options.Project_Selector), Options.Dry_Run);
+            exception
+               when Error : Quality_Manager.Maintenance.Maintenance_Error =>
+                  Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Ada.Exceptions.Exception_Message (Error));
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+                  exit;
+            end;
+            exit when Options.Once;
+            delay 60.0;
+         end loop;
    end case;
 end Main;

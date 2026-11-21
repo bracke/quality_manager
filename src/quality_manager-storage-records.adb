@@ -43,6 +43,26 @@ package body Quality_Manager.Storage.Records is
          Terminal => False,
          Generation => 1);
    begin
+      Quality_Manager.Storage.Put_Current (Item, Entity, Result);
+   end Save;
+
+   procedure Save
+     (Item   : in out Quality_Manager.Storage.Store;
+      Value  : Cycle;
+      Result : out Quality_Manager.Results.Operation_Result) is
+      Entity : constant Stored_Entity :=
+        (Internal_Id => 1,
+         Kind => Cycle_Record,
+         Entity_Key => To_Unbounded_String ("cycle:" & To_String (Value.Cycle_Id)),
+         State => To_Unbounded_String (Quality_Manager.Model.Work_State'Image (Value.State)),
+         Payload => To_Unbounded_String
+           ("{""workflow"":" & Q (Quality_Manager.Model.Workflow_Kind'Image (Value.Workflow))
+            & ",""trigger"":" & Q (To_String (Value.Trigger))
+            & ",""project"":" & Project_JSON (Value.Project)
+            & ",""policy_digest"":" & Q (To_String (Value.Policy_Digest)) & "}"),
+         Terminal => Quality_Manager.Transitions.Is_Terminal (Value.State),
+         Generation => 1);
+   begin
       Quality_Manager.Storage.Put (Item, Entity, Result);
    end Save;
 
