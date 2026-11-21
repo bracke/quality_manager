@@ -18,11 +18,17 @@ config = "*"
 [[depends-on]]
 jsonlib = "*"
 
+[[depends-on]]
+database = "*"
+
 [[pins]]
 config = { path = "../config" }
 
 [[pins]]
 jsonlib = { path = "../jsonlib" }
+
+[[pins]]
+database = { path = "../database" }
 
 [[pins]]
 representation = { path = "../representation" }

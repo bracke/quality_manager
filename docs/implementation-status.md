@@ -35,3 +35,23 @@ also requires IMP-APPROVE-01.
 Gate: **implementation and validation passed**. `alr test` ran 7/7 tests, `alr build --validation -- -f` passed, GNATdoc
 completed, and `quality-manager doctor` ran without a coordinator database. The compiler package is pinned as
 `gnat_native=15.2.1` (the compiler itself reports `GNATLS 15.2.0`).
+
+## Phase 2 — Persistence, transitions, and journal
+
+| Task | State | Evidence |
+| --- | --- | --- |
+| P2-01 logical schema and indexes | complete | 14 logical record types; unique entity, kind, and state indexes |
+| P2-02 creation and migrations | complete | atomic 0→1 initialization and version compatibility registry |
+| P2-03 atomic typed records | complete | typed envelope plus project/work/dispatch/approval/verification facade |
+| P2-04 transition validator | complete | explicit graph and terminal-state protection |
+| P2-05 deterministic identities | complete | typed, length-framed SHA-256 work/dispatch/execution/coalescing keys |
+| P2-06 external-operation journal | complete | prepared/invoking/reconciling/terminal lifecycle |
+| P2-07 leases and fencing | complete | compare-and-advance generation updates |
+| P2-08 event history | complete | state update and append-only event share one transaction |
+| P2-09 startup reconstruction | complete | bounded recovery scan with state-specific recovery actions |
+| P2-10 failure tests | complete | corruption, rollback, restart boundaries, stale leases, read-only mutation |
+
+Gate: **implementation and validation passed; commit pending**. The 11-test suite exercises reopen after every
+recoverable journal boundary and confirms that a failed event insert leaves its work item unchanged. Forced validation
+builds and GNATdoc completed. Compiler warnings shown during forced builds originate in the pinned Database and
+Representation dependencies; Quality Manager units compile without warnings.

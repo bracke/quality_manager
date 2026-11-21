@@ -1,5 +1,6 @@
 with "config";
 with "jsonlib";
+with "database";
 
 project Quality_Manager is
    type Boolean_Text is ("false", "true");

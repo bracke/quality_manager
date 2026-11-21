@@ -27,5 +27,8 @@ representation = { path = "../../representation" }
 [[pins]]
 cryptolib = { path = "../../cryptolib" }
 
+[[pins]]
+database = { path = "../../database" }
+
 [build-profiles]
 "*" = "development"
