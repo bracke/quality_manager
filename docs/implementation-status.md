@@ -51,7 +51,7 @@ completed, and `quality-manager doctor` ran without a coordinator database. The 
 | P2-09 startup reconstruction | complete | bounded recovery scan with state-specific recovery actions |
 | P2-10 failure tests | complete | corruption, rollback, restart boundaries, stale leases, read-only mutation |
 
-Gate: **implementation and validation passed; commit pending**. The 11-test suite exercises reopen after every
+Gate: **implementation and validation passed and committed**. The 11-test suite exercises reopen after every
 recoverable journal boundary and confirms that a failed event insert leaves its work item unchanged. Forced validation
 builds and GNATdoc completed. Compiler warnings shown during forced builds originate in the pinned Database and
 Representation dependencies; Quality Manager units compile without warnings.
