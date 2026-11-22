@@ -10,7 +10,8 @@ package Quality_Manager.Integrations.Quality is
      (Item              : out Adapter;
       Executable        : String;
       Database_Path     : String;
-      Working_Directory : String := "");
+      Working_Directory : String := "";
+      Policy_Path       : String := "");
 
    procedure Resolve_Database_Identity
      (Item     : Adapter;
@@ -31,6 +32,7 @@ private
    type Adapter is record
       Executable        : Ada.Strings.Unbounded.Unbounded_String;
       Database_Path     : Ada.Strings.Unbounded.Unbounded_String;
+      Policy_Path       : Ada.Strings.Unbounded.Unbounded_String;
       Working_Directory : Ada.Strings.Unbounded.Unbounded_String;
       Environment       : Processes.String_Vectors.Vector;
    end record;

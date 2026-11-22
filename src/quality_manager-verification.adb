@@ -117,7 +117,10 @@ package body Quality_Manager.Verification is
          and then (for all Index in Value'First + 4 .. Value'Last => Value (Index) in '0' .. '9'));
    begin
       Evidence := (others => <>);
-      if Response.Status.Kind not in Success | Negative_Result then
+      --  Ada Quality exit code 3 reports completed but incomplete evidence.
+      --  Its JSON still identifies a durable assessment and must be adopted;
+      --  completeness is evaluated independently below.
+      if Response.Status.Kind not in Success | Negative_Result | Stale_Evidence then
          Result := Response.Status;
          return;
       end if;
@@ -584,7 +587,6 @@ package body Quality_Manager.Verification is
         or else Length (Request.Project.Quality_Database_Id) = 0
         or else Length (Request.Project.Canonical_Path) = 0
         or else Length (Request.Project_Selector) = 0
-        or else Length (Request.Profile) = 0
         or else Length (Request.Candidate_Source) = 0
         or else Length (Request.Policy_Fingerprint) = 0
         or else Length (Request.Toolchain_Fingerprint) = 0

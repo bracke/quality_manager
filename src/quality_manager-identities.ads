@@ -48,6 +48,10 @@ package Quality_Manager.Identities is
 
    function Canonical_Digest (Fields : Identity_Field_Array) return String;
 
+   function Operation_Identity
+     (Purpose   : String;
+      Stable_Id : String) return Operation_Id;
+
    function Work_Identity
      (Project                 : Project_Key;
       Assessment_Run         : Positive;

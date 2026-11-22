@@ -42,6 +42,7 @@ package body Quality_Manager_Test_Suite is
    use type Quality_Manager.CLI.Output_Format;
    use type Quality_Manager.Results.Result_Kind;
    use type Quality_Manager.Journal.Recovery_Action;
+   use type Quality_Manager.Identities.Operation_Id;
    use type Quality_Manager.Storage.Record_Kind;
    use type Quality_Manager.Integrations.Runner.Execution_State;
    use type Quality_Manager.Integrations.JSON_CLI.Exit_Contract;
@@ -118,6 +119,7 @@ package body Quality_Manager_Test_Suite is
       Write_Text
         ("[coordinator]" & ASCII.LF & "database = ""/tmp/coordinator.db""" & ASCII.LF
          & "[quality]" & ASCII.LF & "database = ""/tmp/quality.db""" & ASCII.LF
+         & "policy = ""/tmp/quality-policy.toml""" & ASCII.LF
          & "[integrations]" & ASCII.LF & "ada_quality = ""ada-quality-fixture""" & ASCII.LF
          & "model_runner = ""model-runner-fixture""" & ASCII.LF
          & "[scheduler]" & ASCII.LF & "assessment_workers = 3" & ASCII.LF
@@ -131,6 +133,7 @@ package body Quality_Manager_Test_Suite is
          and then Settings.Agent_Workers = 2
          and then Settings.Maximum_Task_Seconds = 120
          and then Settings.Remediation_Attempts = 4
+         and then To_String (Settings.Quality_Policy) = "/tmp/quality-policy.toml"
          and then not Settings.Dry_Run,
          "complete valid configuration is retained");
 
@@ -762,6 +765,13 @@ package body Quality_Manager_Test_Suite is
       Assert (First = Again, "logical identity is deterministic");
       Assert (First /= Campaign, "workflow objectives retain distinct identities");
       Assert (Global /= First and then Global /= Campaign, "global remediation identity is separately framed");
+      Assert
+        (Quality_Manager.Identities.Operation_Identity ("assessment", First) /= 0
+         and then Quality_Manager.Identities.Operation_Identity ("assessment", First)
+           = Quality_Manager.Identities.Operation_Identity ("assessment", First)
+         and then Quality_Manager.Identities.Operation_Identity ("assessment", First)
+           /= Quality_Manager.Identities.Operation_Identity ("publication", First),
+         "operation identities are deterministic, nonzero, and purpose-qualified");
       Assert
         (Quality_Manager.Identities.Execution_Identity
            (Quality_Manager.Identities.Dispatch_Identity (First, "plan", 2, "task"), 1)
@@ -2094,6 +2104,26 @@ package body Quality_Manager_Test_Suite is
       Assert
         (Result.Kind = Quality_Manager.Results.Success and then not Assessment.Complete,
          "an assessment missing one indicator remains incomplete evidence");
+      declare
+         Incomplete_Response : constant Quality_Manager.Integrations.JSON_CLI.Response :=
+           (Status => Quality_Manager.Results.Make_Result
+              (Quality_Manager.Results.Stale_Evidence,
+               "assessment completed with incomplete evidence",
+               "fixture.incomplete"),
+            Exit_Status => 3,
+            Document => To_Unbounded_String
+              (Assessment_JSON ("candidate-source", False)),
+            Diagnostics => Null_Unbounded_String);
+      begin
+         Quality_Manager.Verification.Decode_Assessment
+           (Incomplete_Response, Assessment, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then Assessment.Assessment_Id = 2
+            and then Assessment.Completed
+            and then not Assessment.Complete,
+            "exit code 3 adopts the durable incomplete assessment");
+      end;
       Quality_Manager.Verification.Decide
         (Native, Assessment, Regression, Improve, Context, Decision);
       Assert
@@ -2426,7 +2456,7 @@ package body Quality_Manager_Test_Suite is
          Quality_Manager.Storage.Records.Save (Store, Interrupted_Work, Result);
          Assert (Result.Kind = Quality_Manager.Results.Success, "interrupted assessment work persisted");
          Interrupted.Work_Id := Interrupted_Work.Work_Id;
-         Interrupted.Project_Selector := To_Unbounded_String ("9");
+         Interrupted.Project_Selector := To_Unbounded_String ("99");
          Interrupted.Assessment_Operation := 202;
          Interrupted.Improve_Operation := 203;
          Quality_Manager.Verification.Verify_Remediation
@@ -2644,26 +2674,74 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Maintenance.Run_Cycle (Context, "", False, Result);
       Assert
         (Result.Kind = Quality_Manager.Results.Success
-         and then Quality_Manager.Scheduler.Pending_Count (Scheduler) = 2,
-         "maintenance inventory schedules due assessment work without blocking on disabled projects: "
+         and then Quality_Manager.Scheduler.Pending_Count (Scheduler) = 0
+         and then Quality_Manager.Scheduler.Active_Count
+           (Scheduler, Quality_Manager.Scheduler.Assessment_Resource) = 0,
+         "maintenance consumes due assessment work without blocking on disabled projects: "
          & Quality_Manager.Results.Message (Result)
          & " pending=" & Natural'Image (Quality_Manager.Scheduler.Pending_Count (Scheduler)));
       Quality_Manager.Storage.List
         (Store, Quality_Manager.Storage.Project_Record, Values, 10, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success and then Natural (Values.Length) = 3,
               "qualified project inventory is synchronized across multiple projects");
+      declare
+         Observed_Count : Natural := 0;
+      begin
+         for Value of Values loop
+            if Ada.Strings.Fixed.Index (To_String (Value.Payload), """last_assessment_run"":2") > 0 then
+               Observed_Count := Observed_Count + 1;
+            end if;
+         end loop;
+         Assert
+           (Observed_Count = 2,
+            "complete and incomplete assessments remain the latest durable project observations");
+      end;
       Quality_Manager.Storage.List
         (Store, Quality_Manager.Storage.Cycle_Record, Values, 10, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success and then Natural (Values.Length) = 3,
               "each selected project has independent durable cycle state");
       Quality_Manager.Storage.List
         (Store, Quality_Manager.Storage.Work_Item_Record, Values, 10, Result);
-      Assert
-        (Result.Kind = Quality_Manager.Results.Success
-         and then Natural (Values.Length) = 2
-         and then To_String (Values.First_Element.State) = Quality_Manager.Model.Work_State'Image
-           (Quality_Manager.Model.Queued),
-         "due assessment is committed before entering the in-memory scheduler");
+      declare
+         Verified_Count : Natural := 0;
+         Inconclusive_Count : Natural := 0;
+      begin
+         for Value of Values loop
+            if To_String (Value.State) = Quality_Manager.Model.Work_State'Image
+              (Quality_Manager.Model.Verified)
+            then
+               Verified_Count := Verified_Count + 1;
+            elsif To_String (Value.State) = Quality_Manager.Model.Work_State'Image
+              (Quality_Manager.Model.Inconclusive)
+            then
+               Inconclusive_Count := Inconclusive_Count + 1;
+            end if;
+         end loop;
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then Natural (Values.Length) = 2
+            and then Verified_Count = 1
+            and then Inconclusive_Count = 1,
+            "complete evidence verifies while completed incomplete evidence remains inconclusive");
+      end;
+      Quality_Manager.Storage.List
+        (Store, Quality_Manager.Storage.Journal_Record, Values, 10, Result);
+      declare
+         Committed_Count : Natural := 0;
+      begin
+         for Value of Values loop
+            if To_String (Value.State) = Quality_Manager.Journal.Journal_State'Image
+              (Quality_Manager.Journal.Committed)
+            then
+               Committed_Count := Committed_Count + 1;
+            end if;
+         end loop;
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then Natural (Values.Length) = 2
+            and then Committed_Count = 2,
+            "complete and incomplete assessments both retain committed durable identities");
+      end;
       Quality_Manager.Maintenance.Run_Cycle (Context, "missing", True, Result);
       Assert (Result.Kind = Quality_Manager.Results.Not_Found,
               "maintenance selector with no project is explicit");

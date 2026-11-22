@@ -34,6 +34,8 @@ begin
                if Argument = "--database" then
                   Database_Path := To_Unbounded_String (Ada.Command_Line.Argument (Index + 1));
                   Index := Index + 2;
+               elsif Argument = "--policy" then
+                  Index := Index + 2;
                elsif Argument in "--format" | "--config" | "--state" then
                   Index := Index + 2;
                else
@@ -64,7 +66,11 @@ begin
             then
                Ada.Text_IO.Put
                  ("{""schema_version"":1,""kind"":""check-plan"",""projects"":[{" &
-                  """project_id"":7,""path"":""/project""," &
+                  """project_id"":" &
+                  (if Ada.Strings.Fixed.Index (Text, "--project 9") > 0 then "9" else "7") &
+                  ",""path"":""" &
+                  (if Ada.Strings.Fixed.Index (Text, "--project 9") > 0 then "/second" else "/project") &
+                  """," &
                   """source_fingerprint"":""candidate-source""," &
                   """policy_fingerprint"":""policy""," &
                   """toolchain_fingerprint"":""toolchain""," &
@@ -186,16 +192,19 @@ begin
             elsif Ada.Strings.Fixed.Index (Text, "check ") = 1
               or else Text = "assessment show 2 --json"
             then
-               if Ada.Strings.Fixed.Index (Text, "--project 9") > 0 then
+               if Ada.Strings.Fixed.Index (Text, "--project 99") > 0 then
                   Ada.Text_IO.Put ("not-json");
                   Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
                   return;
                end if;
                Ada.Text_IO.Put
-                 ("{""schema_version"":1,""assessment_id"":2,""project_id"":7," &
+                 ("{""schema_version"":1,""assessment_id"":2,""project_id"":" &
+                  (if Ada.Strings.Fixed.Index (Text, "--project 9") > 0 then "9" else "7") & "," &
                   """project_path"":""" &
                   (if To_String (Database_Path) = "release-quality.db"
-                   then Ada.Directories.Current_Directory else "/project") &
+                   then Ada.Directories.Current_Directory
+                   elsif Ada.Strings.Fixed.Index (Text, "--project 9") > 0 then "/second"
+                   else "/project") &
                   """,""source_fingerprint"":""candidate-source""," &
                   """policy_fingerprint"":""policy"",""toolchain_fingerprint"":""toolchain""," &
                   """status"":""ASSESSMENT_COMPLETED"",""results"":[");
@@ -210,7 +219,7 @@ begin
                   Ada.Text_IO.Put
                        ("{""indicator"":""" & Indicator & """,""execution"":""succeeded""," &
                         """compliance"":""" &
-                        (if Ada.Strings.Fixed.Index (Text, "--project 8") > 0 and then Result_Index = 1
+                        (if Ada.Strings.Fixed.Index (Text, "--project 9") > 0 and then Result_Index = 1
                          then "unknown" else "pass") &
                         """,""applicable"":true,""summary"":""ok""," &
                         """evidence"":""fixture"",""measurement"":" &
@@ -219,7 +228,10 @@ begin
                   end;
                end loop;
                Ada.Text_IO.Put ("],""executions"":[]}");
-               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               Ada.Command_Line.Set_Exit_Status
+                 (if Ada.Strings.Fixed.Index (Text, "--project 9") > 0
+                  then Ada.Command_Line.Exit_Status (3)
+                  else Ada.Command_Line.Success);
                return;
             elsif Has_State
               and then Ada.Strings.Fixed.Index (Text, "verify --task IMP-") = 1

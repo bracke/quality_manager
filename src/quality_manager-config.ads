@@ -5,6 +5,7 @@ package Quality_Manager.Config is
    type Settings is record
       Coordinator_Database  : Ada.Strings.Unbounded.Unbounded_String;
       Quality_Database      : Ada.Strings.Unbounded.Unbounded_String;
+      Quality_Policy        : Ada.Strings.Unbounded.Unbounded_String;
       Ada_Quality_Executable : Ada.Strings.Unbounded.Unbounded_String;
       Model_Runner_Executable : Ada.Strings.Unbounded.Unbounded_String;
       Assessment_Workers    : Positive := 4;

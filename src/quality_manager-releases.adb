@@ -904,7 +904,7 @@ package body Quality_Manager.Releases is
       if Result.Kind = Success then
          Quality_Manager.Integrations.Quality.Initialize
            (Quality, To_String (Settings.Ada_Quality_Executable),
-            To_String (Settings.Quality_Database));
+            To_String (Settings.Quality_Database), Policy_Path => To_String (Settings.Quality_Policy));
          Quality_Manager.Integrations.Quality.Plan_Check
            (Quality,
             Ada.Strings.Fixed.Trim
@@ -990,7 +990,7 @@ package body Quality_Manager.Releases is
          Initialize (Item, Store'Unchecked_Access);
          Quality_Manager.Integrations.Quality.Initialize
            (Quality, To_String (Settings.Ada_Quality_Executable),
-            To_String (Settings.Quality_Database));
+            To_String (Settings.Quality_Database), Policy_Path => To_String (Settings.Quality_Policy));
          Qualify_With_Tools (Item, Quality, Release_Id, "alr", "git", Decision, Result);
       end if;
       if Quality_Manager.Storage.Is_Open (Store) then

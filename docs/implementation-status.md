@@ -156,21 +156,24 @@ forced validation build, and GNATdoc generation passed.
 | P7-02 protected worker coordination | complete | Ada protected pending/active queues |
 | P7-03 inventory synchronization | complete | validated qualified Ada Quality project inventory |
 | P7-04 source/policy/toolchain detection | complete | explicit evidence-identity due-reason classifier |
-| P7-05 due assessment scheduling | complete | enabled projects receive durable assessment work |
-| P7-06 maintenance discovery | complete | independent project cycles and assessment objectives |
+| P7-05 due assessment scheduling | complete | enabled projects receive and execute durable assessment work |
+| P7-06 maintenance discovery | complete | independent project cycles and journaled assessment objectives |
 | P7-07 reservations and fairness | complete | global assessment/agent bounds and project writer exclusion |
 | P7-08 pause/resume/shutdown | complete | protected stop state; no dispatch while stopping |
 | P7-09 daemon and one-shot modes | complete | `maintenance`, `daemon`, and `daemon --once` CLI routes |
 | P7-10 repeated/multi-project tests | complete | restart rebuild, deduplication, blocked isolation, three-project inventory |
 
-The persisted `Queued` state is authoritative; the protected queue is rebuilt by scanning committed work. Eligibility
-uses fail-closed facts and records the first failed condition in the atomic blocked transition event. Reconciliation
-does not enqueue an already-active identity. Current project inventory is the only replaceable record class;
-historical cycles, events, attempts, and verification evidence remain append-only.
+The persisted `Queued` state is authoritative; the protected queue is rebuilt by scanning committed work. A worker
+revalidates the exact check plan, journals the external assessment, adopts its durable run identity, and independently
+checks completeness and provenance. Ada Quality exit code 3 is accepted only as a completed but incomplete assessment:
+it commits the known run identity and leaves the work inconclusive. Reconciliation does not enqueue an already-active
+identity. Current project inventory is the only replaceable record class; historical cycles, events, attempts, and
+verification evidence remain append-only.
 
-Gate: **passed**. The 18-test suite covers deterministic priority, resource limits, restart reconstruction,
-eligibility persistence, cooperative pause/resume, qualified inventory, disabled-project isolation, and multi-project
-assessment scheduling. The warnings-as-errors run, forced validation build, and GNATdoc generation passed.
+Gate: **passed**. The 24-test suite covers deterministic priority, resource limits, restart reconstruction,
+eligibility persistence, cooperative pause/resume, qualified inventory, disabled-project isolation, complete and
+incomplete assessment execution, and multi-project scheduling. The warnings-as-errors run and forced validation build
+passed.
 
 ## Phase 8 — Autonomous improvement campaigns
 
@@ -252,7 +255,7 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | P11-03 applicable GNATprove | complete | Journal state machine SPARK flow/proof passes |
 | P11-04 GNATdoc | complete | project documentation generation succeeds |
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
-| P11-06 real maintenance scenario | pending release environment | requires configured multi-project quality inventory |
+| P11-06 real maintenance scenario | partial | one real project assessed; multi-project archive still required |
 | P11-07 real campaign scenario | pending release environment | requires current baselines and authorization records |
 | P11-08 real release scenario | pending release environment | requires exact candidate evidence and model credentials |
 | P11-09 crash/concurrency stress | partial | assessment/check replay, current-record idempotency, fencing, and process tests pass; full soak remains |
@@ -269,3 +272,8 @@ Ada Quality `81b414f` adds a tested migration for the early schema-3 measurement
 The live database passed migration and integrity checks with its durable identity preserved, and now contains the six
 projects selected for release-environment validation. P11-06 through P11-10 still require archived real workflow
 records; successful inventory migration alone does not satisfy those gates.
+
+On 22 November 2026, a live maintenance worker assessed `quality_manager` and Ada Quality persisted assessment 2.
+The run completed with 85 findings but incomplete evidence because coverage and the release checker were unavailable
+and GNATprove failed. The coordinator therefore cannot claim compliance. This validates real assessment dispatch and
+also identifies the release-environment repairs required before the multi-project P11-06 record can pass.

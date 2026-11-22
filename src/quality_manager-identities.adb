@@ -81,6 +81,25 @@ package body Quality_Manager.Identities is
       end;
    end Canonical_Digest;
 
+   function Operation_Identity
+     (Purpose   : String;
+      Stable_Id : String) return Operation_Id is
+      Digest : constant String := Canonical_Digest
+        ([Text_Value ("quality-manager-operation-v1"),
+          Text_Value (Purpose),
+          Text_Value (Stable_Id)]);
+      Value : Interfaces.Unsigned_64 := 0;
+   begin
+      for Element of Digest (Digest'First .. Digest'First + 15) loop
+         Value := Value * 16
+           + Interfaces.Unsigned_64
+             (if Element in '0' .. '9'
+              then Character'Pos (Element) - Character'Pos ('0')
+              else Character'Pos (Element) - Character'Pos ('a') + 10);
+      end loop;
+      return Operation_Id ((if Value = 0 then 1 else Value));
+   end Operation_Identity;
+
    function Work_Identity
      (Project                 : Project_Key;
       Assessment_Run         : Positive;

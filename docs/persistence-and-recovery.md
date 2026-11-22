@@ -31,3 +31,5 @@ Recovery scanning is bounded. Lease acquisition and renewal require the callerâ€
 larger new generation, so an obsolete owner cannot renew after another owner advances the fence.
 Ada Quality assessments are treated as non-idempotent after invocation: a committed run is adopted by exact run ID,
 while a crash with no durable run identity moves the journal to Needs intervention instead of repeating the check.
+Exit code 3 is not an ambiguous crash when its versioned JSON contains a completed assessment. The coordinator adopts
+that run identity, commits the journal, and separately records the evidence as incomplete and therefore inconclusive.

@@ -16,14 +16,19 @@ package body Quality_Manager.Integrations.Quality is
      (Item              : out Adapter;
       Executable        : String;
       Database_Path     : String;
-      Working_Directory : String := "") is
-      Path : Hostkit.UString;
+      Working_Directory : String := "";
+      Policy_Path       : String := "") is
+      Value : Hostkit.UString;
    begin
       Item.Executable := To_Unbounded_String (Executable);
       Item.Database_Path := To_Unbounded_String (Database_Path);
+      Item.Policy_Path := To_Unbounded_String (Policy_Path);
       Item.Working_Directory := To_Unbounded_String (Working_Directory);
-      if Hostkit.Process.Environment_Value ("PATH", Path) then
-         Item.Environment.Append (To_Unbounded_String ("PATH=" & To_String (Path)));
+      if Hostkit.Process.Environment_Value ("PATH", Value) then
+         Item.Environment.Append (To_Unbounded_String ("PATH=" & To_String (Value)));
+      end if;
+      if Hostkit.Process.Environment_Value ("HOME", Value) then
+         Item.Environment.Append (To_Unbounded_String ("HOME=" & To_String (Value)));
       end if;
    end Initialize;
 
@@ -114,6 +119,13 @@ package body Quality_Manager.Integrations.Quality is
    begin
       Args.Append (To_Unbounded_String ("--database"));
       Args.Append (Item.Database_Path);
+      if Length (Item.Policy_Path) > 0
+        and then not Arguments.Is_Empty
+        and then To_String (Arguments.First_Element) in "check" | "doctor"
+      then
+         Args.Append (To_Unbounded_String ("--policy"));
+         Args.Append (Item.Policy_Path);
+      end if;
       for Argument of Arguments loop
          Args.Append (Argument);
       end loop;
@@ -146,8 +158,11 @@ package body Quality_Manager.Integrations.Quality is
       Args : Processes.String_Vectors.Vector;
    begin
       Args.Append (To_Unbounded_String ("check")); Args.Append (To_Unbounded_String ("--project"));
-      Args.Append (To_Unbounded_String (Project)); Args.Append (To_Unbounded_String ("--profile"));
-      Args.Append (To_Unbounded_String (Profile));
+      Args.Append (To_Unbounded_String (Project));
+      if Profile'Length > 0 then
+         Args.Append (To_Unbounded_String ("--profile"));
+         Args.Append (To_Unbounded_String (Profile));
+      end if;
       if Reuse_Unchanged then Args.Append (To_Unbounded_String ("--reuse-unchanged")); end if;
       if Dry_Run then Args.Append (To_Unbounded_String ("--dry-run")); end if;
       Args.Append (To_Unbounded_String ("--json"));
