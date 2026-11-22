@@ -89,6 +89,15 @@ package Quality_Manager.Storage is
       Evidence       : String;
       Result         : out Quality_Manager.Results.Operation_Result);
 
+   procedure Complete_Cycle
+     (Item           : in out Store;
+      Cycle_Key      : String;
+      Expected_State : Quality_Manager.Model.Work_State;
+      Event_Key      : String;
+      Cause          : String;
+      Evidence       : String;
+      Result         : out Quality_Manager.Results.Operation_Result);
+
    procedure Acquire_Lease
      (Item               : in out Store;
       Resource_Key       : String;
@@ -97,6 +106,22 @@ package Quality_Manager.Storage is
       New_Generation     : Interfaces.Unsigned_64;
       Expires_At         : Interfaces.Unsigned_64;
       Result             : out Quality_Manager.Results.Operation_Result);
+
+   procedure Acquire_Exclusive_Lease
+     (Item         : in out Store;
+      Resource_Key : String;
+      Owner        : String;
+      Now          : Interfaces.Unsigned_64;
+      Expires_At   : Interfaces.Unsigned_64;
+      Generation   : in out Interfaces.Unsigned_64;
+      Result       : out Quality_Manager.Results.Operation_Result);
+
+   procedure Release_Lease
+     (Item         : in out Store;
+      Resource_Key : String;
+      Owner        : String;
+      Generation   : Interfaces.Unsigned_64;
+      Result       : out Quality_Manager.Results.Operation_Result);
 
    procedure Prepare_Operation
      (Item           : in out Store;

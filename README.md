@@ -69,9 +69,8 @@ match. An ambiguous assessment can be adopted only through
 Campaign and release lifecycle commands are listed by `quality-manager help`.
 See `docs/quality-manager.1` for the operator reference.
 
-Phase 11 stabilization currently passes the 24-test AUnit suite, the
-warnings-as-errors validation build, applicable GNATprove analysis, GNATdoc,
-and 90.0996% measured production-line coverage. Final release status remains
-blocked until real multi-project maintenance, campaign, and exact-candidate
-qualification records are captured in the configured release environment; see
-`docs/release-checklist.md` and `docs/implementation-status.md`.
+Phase 11 stabilization currently passes the 25-test AUnit suite and the
+warnings-as-errors validation build. Real maintenance and campaign records are
+complete. The exact-candidate release run is correctly blocked by quality
+failures, and full-scope production coverage is 87.3873%, below the required
+90%. See `docs/release-checklist.md` and `docs/implementation-status.md`.

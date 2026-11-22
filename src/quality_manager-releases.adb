@@ -5,6 +5,9 @@ with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Interfaces;
 with Hostkit;
 with Hostkit.Process;
+with Jsonlib.Documents;
+with Jsonlib.Errors;
+with Jsonlib.Parsers;
 with Jsonlib.Serializers;
 with Quality_Manager.Config;
 with Quality_Manager.Integrations.JSON_CLI;
@@ -16,6 +19,7 @@ with Quality_Manager.Storage.Records;
 with Quality_Manager.Storage.Schema;
 
 package body Quality_Manager.Releases is
+   use type Jsonlib.Documents.Value_Kind;
    use type Interfaces.Unsigned_64;
    use type Quality_Manager.Results.Result_Kind;
    use type Quality_Manager.Identities.Operation_Id;
@@ -113,6 +117,7 @@ package body Quality_Manager.Releases is
       Request : Quality_Manager.Integrations.Processes.Request;
       Process : Quality_Manager.Integrations.Processes.Execution_Result;
       Path    : Hostkit.UString;
+      Home    : Hostkit.UString;
    begin
       Output := Null_Unbounded_String;
       Request.Executable := To_Unbounded_String (Executable);
@@ -122,6 +127,9 @@ package body Quality_Manager.Releases is
       Request.Output_Limit := 4 * 1_024 * 1_024;
       if Hostkit.Process.Environment_Value ("PATH", Path) then
          Request.Environment.Append (To_Unbounded_String ("PATH=" & To_String (Path)));
+      end if;
+      if Hostkit.Process.Environment_Value ("HOME", Home) then
+         Request.Environment.Append (To_Unbounded_String ("HOME=" & To_String (Home)));
       end if;
       Quality_Manager.Integrations.Processes.Execute (Request, Process);
       if not Process.Started then
@@ -168,6 +176,46 @@ package body Quality_Manager.Releases is
       end loop;
       return (if Last > Document'Last then "" else Document (First .. Last - 1));
    end JSON_String;
+
+   function Natural_Field
+     (Document : Jsonlib.Documents.Document;
+      Parent   : Jsonlib.Documents.Node;
+      Name     : String;
+      Value    : out Natural) return Boolean is
+      Node   : constant Jsonlib.Documents.Node := Document.Member (Parent, Name);
+      Number : Long_Long_Integer;
+   begin
+      if not Jsonlib.Documents.Is_Present (Node)
+        or else Document.Kind (Node) /= Jsonlib.Documents.Integer_Value
+      then
+         Value := 0;
+         return False;
+      end if;
+      Number := Document.As_Integer (Node);
+      if Number not in 0 .. Long_Long_Integer (Natural'Last) then
+         Value := 0;
+         return False;
+      end if;
+      Value := Natural (Number);
+      return True;
+   end Natural_Field;
+
+   function String_Field
+     (Document : Jsonlib.Documents.Document;
+      Parent   : Jsonlib.Documents.Node;
+      Name     : String;
+      Value    : out Unbounded_String) return Boolean is
+      Node : constant Jsonlib.Documents.Node := Document.Member (Parent, Name);
+   begin
+      if not Jsonlib.Documents.Is_Present (Node)
+        or else Document.Kind (Node) /= Jsonlib.Documents.String_Value
+      then
+         Value := Null_Unbounded_String;
+         return False;
+      end if;
+      Value := To_Unbounded_String (Document.As_String (Node));
+      return True;
+   end String_Field;
 
    procedure Initialize
      (Item  : out Context;
@@ -914,20 +962,55 @@ package body Quality_Manager.Releases is
       end if;
       if Result.Kind = Success then
          declare
-            Document : constant String := To_String (Plan.Document);
+            Document : Jsonlib.Documents.Document;
+            Error    : Jsonlib.Errors.Error_Info;
          begin
-            Source := To_Unbounded_String (JSON_String (Document, "source_fingerprint"));
-            Policy := To_Unbounded_String (JSON_String (Document, "policy_fingerprint"));
-            Toolchain := To_Unbounded_String (JSON_String (Document, "toolchain_fingerprint"));
-            if JSON_Natural (Document, "project_id") /= Project.Quality_Project_Id
-              or else JSON_String (Document, "path") /= To_String (Project.Canonical_Path)
-              or else Length (Source) = 0
-              or else Length (Policy) = 0
-              or else Length (Toolchain) = 0
-            then
+            Jsonlib.Parsers.Parse
+              (To_String (Plan.Document), Document, Error,
+               (Max_Depth => 32, Max_Length => 16 * 1_024 * 1_024,
+                Duplicates => Jsonlib.Parsers.Refuse_Duplicates));
+            if Jsonlib.Errors.Failed (Error) then
                Result := Make_Result
-                 (Incompatible_Contract, "release assessment plan identity is incomplete or mismatched",
-                  "qm.release.plan");
+                 (Incompatible_Contract, "release assessment plan is invalid JSON",
+                  "qm.release.plan-json");
+            else
+               declare
+                  Projects : constant Jsonlib.Documents.Node :=
+                    Document.Member (Document.Root, "projects");
+                  Id       : Natural := 0;
+                  Path     : Unbounded_String;
+               begin
+                  if not Jsonlib.Documents.Is_Present (Projects)
+                    or else Document.Kind (Projects) /= Jsonlib.Documents.Array_Value
+                    or else Document.Length (Projects) /= 1
+                  then
+                     Result := Make_Result
+                       (Incompatible_Contract, "release assessment plan must contain exactly one project",
+                        "qm.release.plan");
+                  else
+                     declare
+                        Project_Node : constant Jsonlib.Documents.Node := Document.Element (Projects, 1);
+                     begin
+                        if Document.Kind (Project_Node) /= Jsonlib.Documents.Object_Value
+                          or else not Natural_Field (Document, Project_Node, "project_id", Id)
+                          or else Id /= Project.Quality_Project_Id
+                          or else not String_Field (Document, Project_Node, "path", Path)
+                          or else To_String (Path) /= To_String (Project.Canonical_Path)
+                          or else not String_Field (Document, Project_Node, "source_fingerprint", Source)
+                          or else not String_Field (Document, Project_Node, "policy_fingerprint", Policy)
+                          or else not String_Field (Document, Project_Node, "toolchain_fingerprint", Toolchain)
+                          or else Length (Source) = 0
+                          or else Length (Policy) = 0
+                          or else Length (Toolchain) = 0
+                        then
+                           Result := Make_Result
+                             (Incompatible_Contract,
+                              "release assessment plan identity is incomplete or mismatched",
+                              "qm.release.plan");
+                        end if;
+                     end;
+                  end if;
+               end;
             end if;
          end;
       end if;

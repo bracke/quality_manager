@@ -3,8 +3,14 @@ with Ada.Directories;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with Hostkit.Process;
+with Quality_Manager.Identities;
+with Quality_Manager.Results;
+with Quality_Manager.Storage;
 
 procedure QM_Adapter_Fixture is
+   use type Quality_Manager.Results.Result_Kind;
+
    Status : Integer := 0;
    Numeric_Mode : Boolean := False;
    Integrated_Marker : constant String := "/tmp/qm-adapter-project-integrated";
@@ -25,6 +31,29 @@ procedure QM_Adapter_Fixture is
       return Text (First .. Last - 1);
    end Option_Value;
 begin
+   if Ada.Command_Line.Argument_Count = 2
+     and then Ada.Command_Line.Argument (1) = "coordinator-crash"
+   then
+      declare
+         Store  : Quality_Manager.Storage.Store;
+         Result : Quality_Manager.Results.Operation_Result;
+      begin
+         Quality_Manager.Storage.Open
+           (Store, Ada.Command_Line.Argument (2), True, Result);
+         if Result.Kind /= Quality_Manager.Results.Success then
+            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Exit_Status (70));
+            return;
+         end if;
+         Quality_Manager.Storage.Prepare_Operation
+           (Store, Quality_Manager.Identities.Operation_Id (9_999),
+            "crash-test", "persist before abrupt termination", "fixture:crash", Result);
+         if Result.Kind /= Quality_Manager.Results.Success then
+            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Exit_Status (71));
+            return;
+         end if;
+         Hostkit.Process.End_Now (77);
+      end;
+   end if;
    if Ada.Command_Line.Argument_Count >= 1 then
       begin
          Status := Integer'Value (Ada.Command_Line.Argument (1));
@@ -68,12 +97,35 @@ begin
          declare
             Text : constant String := To_String (Invocation);
          begin
-            if Ada.Strings.Fixed.Index (Text, "project list") = 1 then
+            if Text in "project 7" | "project 8" then
                Ada.Text_IO.Put
-                 ("{""schema_version"":1,""kind"":""project-list"",""projects"":[" &
-                  "{""id"":7,""path"":""/project"",""enabled"":true,""removed"":false}," &
-                  "{""id"":8,""path"":""/disabled"",""enabled"":false,""removed"":false}," &
-                  "{""id"":9,""path"":""/second"",""enabled"":true,""removed"":false}]}");
+                 ("{""schema_version"":1,""report_type"":""project"",""source"":{" &
+                  """application"":""ada_quality"",""database_schema_version"":6," &
+                  """snapshot"":""fixture""},""selection"":{""project_id"":" &
+                  (if Text = "project 8" then "8" else "7") & "},""data"":{""project"":{" &
+                  """project_id"":" & (if Text = "project 8" then "8" else "7") & "," &
+                  """path"":""" & (if Text = "project 8" then "/second" else "/project") &
+                  """,""current_run_id"":2},""assessment"":{""run_id"":2}," &
+                  """indicators"":[{""id"":""TST-03"",""compliance"":""pass""," &
+                  """applicable"":true,""evidence"":""fixture evidence""}]}}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
+            elsif Ada.Strings.Fixed.Index (Text, "project list") = 1 then
+               if Ada.Strings.Fixed.Index (To_String (Database_Path), "inventory-invalid") > 0 then
+                  Ada.Text_IO.Put ("{");
+               elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "inventory-schema") > 0 then
+                  Ada.Text_IO.Put ("{""schema_version"":2,""kind"":""project-list"",""projects"":[]}");
+               elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "inventory-project") > 0 then
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":1,""kind"":""project-list"",""projects"":[" &
+                     "{""id"":7,""enabled"":true,""removed"":false}]}");
+               else
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":1,""kind"":""project-list"",""projects"":[" &
+                     "{""id"":7,""path"":""/project"",""enabled"":true,""removed"":false}," &
+                     "{""id"":8,""path"":""/disabled"",""enabled"":false,""removed"":false}," &
+                     "{""id"":9,""path"":""/second"",""enabled"":true,""removed"":false}]}");
+               end if;
                Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
                return;
             elsif Ada.Strings.Fixed.Index (Text, "project ") = 1 then
@@ -81,6 +133,11 @@ begin
             elsif Ada.Strings.Fixed.Index (Text, "check ") = 1
               and then Ada.Strings.Fixed.Index (Text, "--dry-run") > 0
             then
+               if Ada.Strings.Fixed.Index (To_String (Database_Path), "plan-invalid") > 0 then
+                  Ada.Text_IO.Put ("{");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               end if;
                Ada.Text_IO.Put
                  ("{""schema_version"":1,""kind"":""check-plan"",""projects"":[{" &
                   """project_id"":" &
@@ -217,6 +274,12 @@ begin
                   Is_Execute : constant Boolean := Ada.Strings.Fixed.Index (Text, "work execute ") = 1;
                   Is_Integrate : constant Boolean := Ada.Strings.Fixed.Index (Text, "work integrate ") = 1;
                   Is_Inspect : constant Boolean := Ada.Strings.Fixed.Index (Text, "work inspect ") = 1;
+                  Project_Path : constant String := Option_Value (Text, "project");
+                  Forced_Cancelled : constant Boolean := Project_Path = "/cancelled" and then Is_Execute;
+                  Forced_Failed : constant Boolean := Project_Path = "/failed" and then Is_Execute;
+                  Forced_Integrated : constant Boolean := Project_Path = "/integrated" and then Is_Execute;
+                  Forced_Invalid : constant Boolean := Project_Path = "/invalid-state" and then Is_Execute;
+                  Forced_Blocked : constant Boolean := Project_Path = "/blocked" and then Is_Inspect;
                   Known_Operation : constant Boolean :=
                     Operation in "qm-execution-1" | "qm-execution-2" |
                                  "qm-execution-3" | "qm-execution-4" |
@@ -246,7 +309,8 @@ begin
                   end if;
                   Ada.Text_IO.Put
                     ("{""schema_version"":1,""kind"":""work-operation""," &
-                     """operation_id"":""" & Operation & """,""project_identity"":""project-identity""," &
+                     """operation_id"":""" & Operation & """,""project_identity"":""" &
+                     (if Project_Path = "/missing-identity" then "" else "project-identity") & """," &
                      """source_fingerprint"":""" &
                      (if Is_Integrate and then not Pending_Integration
                       then "integrated-source"
@@ -258,10 +322,15 @@ begin
                       then "candidate-source"
                       else "source-fingerprint") &
                      """,""task_id"":""TASK-001""," &
-                     """task_revision"":""task-revision"",""effective_task_revision"":""effective-revision""," &
+                     """task_revision"":""" &
+                     (if Project_Path = "/missing-identity" then "" else "task-revision") &
+                     """,""effective_task_revision"":""effective-revision""," &
                      """execution_policy"":""policy-fingerprint"",""execution_generation"":""1""," &
                      """execution_state"":""" &
                      (if Is_Inspect then "ready"
+                      elsif Forced_Cancelled then "cancelled"
+                      elsif Forced_Failed then "failed"
+                      elsif Forced_Integrated or else Forced_Invalid then "completed"
                       elsif Incompatible then "incompatible"
                       elsif Cancelled then "cancelled"
                       elsif Failed then "failed"
@@ -270,18 +339,22 @@ begin
                       then "completed" else "awaiting_integration") &
                      """,""native_task_state"":""" &
                      (if Is_Inspect then "ready"
+                      elsif Forced_Cancelled then "cancelled"
+                      elsif Forced_Failed then "failed"
                       elsif Running then "running" elsif Failed then "failed"
                       elsif Cancelled then "cancelled" else "verification") &
                      """,""core_state"":""" &
                      (if Is_Inspect then "ready"
                       elsif Running then "running" elsif Failed then "failed"
                       elsif Cancelled then "cancelled" else "verification") &
-                     """,""ready"":" & (if Is_Inspect then "true" else "false") &
+                     """,""ready"":" & (if Is_Inspect and then not Forced_Blocked then "true" else "false") &
                      ",""readiness_reasons"":[]," &
                      """workspace_id"":""" &
                      (if Is_Integrate or else Persisted_Integrated then "" else "workspace-1") &
                      """,""workspace_state"":""" &
-                     (if (Is_Integrate and then not Pending_Integration) or else Persisted_Integrated
+                     (if Forced_Integrated then "integrated"
+                      elsif Forced_Invalid then "active"
+                      elsif (Is_Integrate and then not Pending_Integration) or else Persisted_Integrated
                       then "integrated" else "active") &
                      """," &
                      """result"":""success"",""diagnostics"":[],""audit_reference"":""" & Audit & """," &
@@ -290,8 +363,13 @@ begin
                Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
                return;
             elsif Ada.Strings.Fixed.Index (Text, "check ") = 1
-              or else Text = "assessment show 2 --json"
+              or else Text in "assessment show 2 --json" | "assessment show 3 --json"
             then
+               if Ada.Strings.Fixed.Index (To_String (Database_Path), "assessment-invalid") > 0 then
+                  Ada.Text_IO.Put ("{");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               end if;
                if Ada.Strings.Fixed.Index (Text, "--project 99") > 0 then
                   Ada.Text_IO.Put ("not-json");
                   Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
@@ -299,7 +377,8 @@ begin
                end if;
                Ada.Text_IO.Put
                  ("{""schema_version"":1,""assessment_id"":" &
-                  (if Ada.Directories.Exists (Integrated_Marker) then "4" else "2") &
+                  (if Text = "assessment show 3 --json" then "3"
+                   elsif Ada.Directories.Exists (Integrated_Marker) then "4" else "2") &
                   ",""project_id"":" &
                   (if Ada.Strings.Fixed.Index (Text, "--project 9") > 0 then "9" else "7") & "," &
                   """project_path"":""" &
@@ -323,7 +402,9 @@ begin
                   Ada.Text_IO.Put
                        ("{""indicator"":""" & Indicator & """,""execution"":""succeeded""," &
                         """compliance"":""" &
-                        (if Ada.Strings.Fixed.Index (Text, "--project 9") > 0 and then Result_Index = 1
+                        (if Text = "assessment show 3 --json" and then Result_Index = 1
+                         then "unknown"
+                         elsif Ada.Strings.Fixed.Index (Text, "--project 9") > 0 and then Result_Index = 1
                          then "unknown"
                          elsif Ada.Strings.Fixed.Index (Text, "--project 7") > 0
                            and then To_String (Database_Path) = "quality.db"

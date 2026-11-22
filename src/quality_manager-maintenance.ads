@@ -58,6 +58,10 @@ package Quality_Manager.Maintenance is
       Now              : Interfaces.Unsigned_64;
       Result           : out Quality_Manager.Results.Operation_Result);
 
+   procedure Reconcile_Cycles
+     (Item   : in out Context;
+      Result : out Quality_Manager.Results.Operation_Result);
+
    procedure Run_Cycle
      (Project_Selector : String := "";
       Dry_Run          : Boolean := False);
@@ -78,5 +82,8 @@ private
       Runner   : Quality_Manager.Integrations.Runner.Adapter;
       Maximum_Task_Seconds : Positive := 3_600;
       Maximum_Attempts : Positive := 2;
+      Lease_Owner : Ada.Strings.Unbounded.Unbounded_String;
+      Lease_Generation : Interfaces.Unsigned_64 := 0;
+      Lease_Seconds : Positive := 3_900;
    end record;
 end Quality_Manager.Maintenance;

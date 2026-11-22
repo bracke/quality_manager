@@ -11,6 +11,7 @@ with Jsonlib.Parsers;
 with Jsonlib.Serializers;
 with Quality_Manager.Config;
 with Quality_Manager.Identities;
+with Quality_Manager.Integrations.JSON_CLI;
 with Quality_Manager.Model;
 with Quality_Manager.Storage;
 with Quality_Manager.Storage.Records;
@@ -118,6 +119,21 @@ package body Quality_Manager.Campaigns is
       Value := Natural (Number);
       return True;
    end Natural_Field;
+
+   function Boolean_Field
+     (Document : Jsonlib.Documents.Document; Parent : Jsonlib.Documents.Node;
+      Name : String; Value : out Boolean) return Boolean is
+      Node : constant Jsonlib.Documents.Node := Document.Member (Parent, Name);
+   begin
+      if not Jsonlib.Documents.Is_Present (Node)
+        or else Document.Kind (Node) /= Jsonlib.Documents.Boolean_Value
+      then
+         Value := False;
+         return False;
+      end if;
+      Value := Document.As_Boolean (Node);
+      return True;
+   end Boolean_Field;
 
    function JSON_Natural (Document, Name : String) return Natural is
       Prefix : constant String := Character'Val (34) & Name & Character'Val (34) & ":";
@@ -515,6 +531,151 @@ package body Quality_Manager.Campaigns is
       Quality_Manager.Storage.Records.Save (Item.Database.all, Campaign, Result);
    end Reconcile;
 
+   procedure Reconcile
+     (Item        : in out Context;
+      Summary     : Quality_Manager.Integrations.Summary.Adapter;
+      Campaign_Id : String;
+      Result      : out Operation_Result) is
+      Campaign : Quality_Manager.Storage.Schema.Campaign;
+      Targets  : Quality_Manager.Storage.Entity_Vectors.Vector;
+   begin
+      Load_Campaign (Item, Campaign_Id, Campaign, Result);
+      if Result.Kind /= Success then
+         return;
+      elsif Campaign.State in Quality_Manager.Model.Cancelled | Quality_Manager.Model.Superseded
+        | Quality_Manager.Model.Failed
+      then
+         Result := Make_Result
+           (Not_Ready, "campaign is terminal", "qm.campaign.terminal");
+         return;
+      end if;
+      Quality_Manager.Storage.List
+        (Item.Database.all, Quality_Manager.Storage.Campaign_Target_Record, Targets, 100_000, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      for Target of Targets loop
+         if JSON_String (To_String (Target.Payload), "campaign_id") = Campaign_Id
+           and then JSON_Natural (To_String (Target.Payload), "definition_revision")
+             = Campaign.Definition_Revision
+         then
+            declare
+               Project_Id : constant Natural := JSON_Natural
+                 (To_String (Target.Payload), "quality_project_id");
+               Project_Path : constant String := JSON_String
+                 (To_String (Target.Payload), "canonical_path");
+               Indicator : constant String := JSON_String (To_String (Target.Payload), "indicator");
+               Response  : Quality_Manager.Integrations.JSON_CLI.Response;
+               Document  : Jsonlib.Documents.Document;
+               Error     : Jsonlib.Errors.Error_Info;
+               Run       : Natural := 0;
+               Found     : Boolean := False;
+               Outcome   : Unbounded_String;
+               Applicability_Valid : Boolean := False;
+            begin
+               if Project_Id = 0 or else Project_Path'Length = 0 or else Indicator'Length = 0 then
+                  Result := Make_Result
+                    (Integrity_Error, "campaign target identity is incomplete", "qm.campaign.target-identity");
+                  return;
+               end if;
+               Quality_Manager.Integrations.Summary.Read_Project_Status
+                 (Summary, Ada.Strings.Fixed.Trim (Natural'Image (Project_Id), Ada.Strings.Both), Response);
+               if Response.Status.Kind /= Success then
+                  Result := Response.Status;
+                  return;
+               end if;
+               Jsonlib.Parsers.Parse
+                 (To_String (Response.Document), Document, Error,
+                  (Max_Depth => 64, Max_Length => 16 * 1_024 * 1_024,
+                   Duplicates => Jsonlib.Parsers.Refuse_Duplicates));
+               if Jsonlib.Errors.Failed (Error) then
+                  Result := Make_Result
+                    (Incompatible_Contract, "Summary project evidence is invalid JSON",
+                     "qm.campaign.summary-json");
+                  return;
+               end if;
+               declare
+                  Root       : constant Jsonlib.Documents.Node := Document.Root;
+                  Data       : constant Jsonlib.Documents.Node := Document.Member (Root, "data");
+                  Project    : constant Jsonlib.Documents.Node := Document.Member (Data, "project");
+                  Assessment : constant Jsonlib.Documents.Node := Document.Member (Data, "assessment");
+                  Indicators : constant Jsonlib.Documents.Node := Document.Member (Data, "indicators");
+                  Report_Project : Natural := 0;
+                  Report_Path    : Unbounded_String;
+               begin
+                  if not Jsonlib.Documents.Is_Present (Data)
+                    or else Document.Kind (Data) /= Jsonlib.Documents.Object_Value
+                    or else not Jsonlib.Documents.Is_Present (Project)
+                    or else Document.Kind (Project) /= Jsonlib.Documents.Object_Value
+                    or else not Natural_Field (Document, Project, "project_id", Report_Project)
+                    or else Report_Project /= Project_Id
+                    or else not String_Field (Document, Project, "path", Report_Path)
+                    or else To_String (Report_Path) /= Project_Path
+                    or else not Jsonlib.Documents.Is_Present (Assessment)
+                    or else Document.Kind (Assessment) /= Jsonlib.Documents.Object_Value
+                    or else not Natural_Field (Document, Assessment, "run_id", Run)
+                    or else Run = 0
+                    or else not Jsonlib.Documents.Is_Present (Indicators)
+                    or else Document.Kind (Indicators) /= Jsonlib.Documents.Array_Value
+                  then
+                     Result := Make_Result
+                       (Incompatible_Contract, "Summary project evidence is incomplete or mismatched",
+                        "qm.campaign.summary-contract");
+                     return;
+                  end if;
+                  for Index in 1 .. Document.Length (Indicators) loop
+                     declare
+                        Node       : constant Jsonlib.Documents.Node := Document.Element (Indicators, Index);
+                        Id         : Unbounded_String;
+                        Compliance : Unbounded_String;
+                        Evidence   : Unbounded_String;
+                        Applicable : Boolean := False;
+                     begin
+                        if Document.Kind (Node) = Jsonlib.Documents.Object_Value
+                          and then String_Field (Document, Node, "id", Id)
+                          and then To_String (Id) = Indicator
+                        then
+                           if not String_Field (Document, Node, "compliance", Compliance)
+                             or else not Boolean_Field (Document, Node, "applicable", Applicable)
+                             or else not String_Field (Document, Node, "evidence", Evidence)
+                             or else To_String (Compliance) not in
+                               "pass" | "violation" | "unknown" | "not-applicable"
+                           then
+                              Result := Make_Result
+                                (Incompatible_Contract, "Summary indicator evidence is incomplete",
+                                 "qm.campaign.summary-indicator");
+                              return;
+                           end if;
+                           Outcome := To_Unbounded_String
+                             ((if To_String (Compliance) = "unknown" then "incomplete"
+                               else To_String (Compliance)));
+                           Applicability_Valid :=
+                             To_String (Compliance) = "not-applicable"
+                             and then not Applicable and then Length (Evidence) > 0;
+                           Found := True;
+                           exit;
+                        end if;
+                     end;
+                  end loop;
+               end;
+               if not Found then
+                  Result := Make_Result
+                    (Incompatible_Contract, "campaign indicator is absent from current Summary evidence",
+                     "qm.campaign.summary-indicator-missing");
+                  return;
+               end if;
+               Update_Target
+                 (Item, Campaign_Id, Positive (Project_Id), Indicator, Positive (Run),
+                  To_String (Outcome), Applicability_Valid, Result);
+               if Result.Kind /= Success then
+                  return;
+               end if;
+            end;
+         end if;
+      end loop;
+      Reconcile (Item, Campaign_Id, Result);
+   end Reconcile;
+
    procedure Update_Target
      (Item          : in out Context;
       Campaign_Id   : String;
@@ -696,6 +857,7 @@ package body Quality_Manager.Campaigns is
       Settings : Quality_Manager.Config.Settings;
       Store : aliased Quality_Manager.Storage.Store;
       Item : Context;
+      Summary : Quality_Manager.Integrations.Summary.Adapter;
       Result, Close_Result : Operation_Result;
    begin
       Quality_Manager.Config.Load ("config/quality-manager.toml", False, Settings, Result);
@@ -704,12 +866,15 @@ package body Quality_Manager.Campaigns is
       end if;
       if Result.Kind = Success then
          Initialize (Item, Store'Unchecked_Access);
+         Quality_Manager.Integrations.Summary.Initialize
+           (Summary, To_String (Settings.Ada_Quality_Summary_Executable),
+            To_String (Settings.Quality_Database));
          case Action is
             when Create_Action => Create (Item, Value, Result);
             when Start_Action => Start (Item, Value, Result);
             when Pause_Action => Pause (Item, Value, Result);
             when Resume_Action => Resume (Item, Value, Result);
-            when Reconcile_Action => Reconcile (Item, Value, Result);
+            when Reconcile_Action => Reconcile (Item, Summary, Value, Result);
          end case;
       end if;
       Quality_Manager.Storage.Close (Store, Close_Result);

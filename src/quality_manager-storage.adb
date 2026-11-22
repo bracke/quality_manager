@@ -105,7 +105,7 @@ package body Quality_Manager.Storage is
         (case Status.Code is
             when Database.Status.Not_Found => Not_Found,
             when Database.Status.Duplicate_Key | Database.Status.Already_Exists => Integrity_Error,
-            when Database.Status.Transaction_Conflict => Temporarily_Unavailable,
+            when Database.Status.Transaction_Conflict | Database.Status.Lock_Error => Temporarily_Unavailable,
             when Database.Status.Invalid_File | Database.Status.Corrupt_File | Database.Status.Corruption_Detected
                | Database.Status.WAL_Corruption | Database.Status.Corrupt_Index => Integrity_Error,
             when others => Execution_Error);
@@ -476,7 +476,9 @@ package body Quality_Manager.Storage is
       Updated  : Stored_Entity := Value;
       New_Row  : Boolean := False;
    begin
-      if Value.Kind not in Project_Record | Campaign_Record | Campaign_Target_Record | Release_Record then
+      if Value.Kind not in Cycle_Record | Project_Record | Campaign_Record | Campaign_Target_Record
+        | Release_Record
+      then
          Result := Make_Result
            (Authorization_Required, "record class is append-only", "qm.storage.current-kind");
          return;
@@ -659,6 +661,82 @@ package body Quality_Manager.Storage is
       end if;
    end Transition_Work;
 
+   procedure Complete_Cycle
+     (Item           : in out Store;
+      Cycle_Key      : String;
+      Expected_State : Quality_Manager.Model.Work_State;
+      Event_Key      : String;
+      Cause          : String;
+      Evidence       : String;
+      Result         : out Operation_Result) is
+      Tx       : Database.Transactions.Transaction;
+      Cycle    : Stored_Entity;
+      Existing : Stored_Entity;
+      Event    : Stored_Entity;
+      Status   : Database.Status.Result;
+      Expected : constant String := Quality_Manager.Model.Work_State'Image (Expected_State);
+      Completed : constant String := Quality_Manager.Model.Work_State'Image
+        (Quality_Manager.Model.Verified);
+   begin
+      Begin_Write (Item, Tx, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Find_In_Transaction (Item, Tx, Cycle_Key, Cycle, Status);
+      if not Database.Status.Is_Ok (Status) then
+         Database.Transactions.Rollback (Tx);
+         Result := Database_Failure (Status, "load cycle for completion");
+         return;
+      elsif Cycle.Kind /= Cycle_Record or else To_String (Cycle.State) /= Expected
+        or else Cycle.Terminal
+      then
+         Database.Transactions.Rollback (Tx);
+         Result := Make_Result
+           (Invalid_Request, "cycle state precondition failed", "qm.cycle.stale");
+         return;
+      end if;
+      Find_In_Transaction (Item, Tx, Event_Key, Existing, Status);
+      if Database.Status.Is_Ok (Status) then
+         Database.Transactions.Rollback (Tx);
+         Result := Make_Result (Integrity_Error, "event identity already exists", "qm.event.duplicate");
+         return;
+      elsif Status.Code /= Database.Status.Not_Found then
+         Database.Transactions.Rollback (Tx);
+         Result := Database_Failure (Status, "check cycle event identity");
+         return;
+      end if;
+
+      Cycle.State := To_Unbounded_String (Completed);
+      Cycle.Terminal := True;
+      Cycle.Generation := Cycle.Generation + 1;
+      Status := Entity_Tables.Update (Tx, Item.DB, Item.Table, Cycle);
+      Event :=
+        (Internal_Id => Item.Next_Id,
+         Kind => Event_Record,
+         Entity_Key => To_Unbounded_String (Event_Key),
+         State => To_Unbounded_String (Expected & "->" & Completed),
+         Payload => To_Unbounded_String ("cause=" & Cause & ASCII.LF & "evidence=" & Evidence),
+         Terminal => True,
+         Generation => 1);
+      if Database.Status.Is_Ok (Status) then
+         Status := Entity_Tables.Insert (Tx, Item.DB, Item.Table, Event);
+      end if;
+      if Database.Status.Is_Ok (Status) then
+         Status := Database.Transactions.Commit (Tx);
+      else
+         Database.Transactions.Rollback (Tx);
+      end if;
+      if Database.Status.Is_Ok (Status) then
+         Item.Next_Id := Item.Next_Id + 1;
+         Result := Make_Result (Success);
+      else
+         Result := Database_Failure (Status, "commit cycle completion and event");
+      end if;
+   exception
+      when Constraint_Error =>
+         Result := Make_Result (Integrity_Error, "cycle generation exhausted", "qm.cycle.generation");
+   end Complete_Cycle;
+
    procedure Acquire_Lease
      (Item                : in out Store;
       Resource_Key        : String;
@@ -726,6 +804,154 @@ package body Quality_Manager.Storage is
          Result := Database_Failure (Status, "commit lease");
       end if;
    end Acquire_Lease;
+
+   procedure Acquire_Exclusive_Lease
+     (Item         : in out Store;
+      Resource_Key : String;
+      Owner        : String;
+      Now          : Interfaces.Unsigned_64;
+      Expires_At   : Interfaces.Unsigned_64;
+      Generation   : in out Interfaces.Unsigned_64;
+      Result       : out Operation_Result) is
+      Tx      : Database.Transactions.Transaction;
+      Lease   : Stored_Entity;
+      Status  : Database.Status.Result;
+      New_Row : Boolean := False;
+      Key     : constant String := "lease:" & Resource_Key;
+      Requested_Generation : constant Interfaces.Unsigned_64 := Generation;
+   begin
+      if Resource_Key'Length = 0 or else Owner'Length = 0 then
+         Result := Make_Result (Invalid_Request, "lease resource and owner are required", "qm.lease.identity");
+         return;
+      elsif Expires_At <= Now then
+         Result := Make_Result (Invalid_Request, "lease expiration must be in the future", "qm.lease.expiration");
+         return;
+      end if;
+
+      Begin_Write (Item, Tx, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Find_In_Transaction (Item, Tx, Key, Lease, Status);
+      if Status.Code = Database.Status.Not_Found then
+         if Requested_Generation /= 0 then
+            Database.Transactions.Rollback (Tx);
+            Result := Make_Result
+              (Invalid_Request, "new lease requires generation zero", "qm.lease.stale");
+            return;
+         end if;
+         Lease :=
+           (Internal_Id => Item.Next_Id,
+            Kind => Lease_Record,
+            Entity_Key => To_Unbounded_String (Key),
+            State => To_Unbounded_String (Owner),
+            Payload => To_Unbounded_String (Interfaces.Unsigned_64'Image (Expires_At)),
+            Terminal => False,
+            Generation => 1);
+         New_Row := True;
+         Status := Entity_Tables.Insert (Tx, Item.DB, Item.Table, Lease);
+      elsif not Database.Status.Is_Ok (Status) then
+         Database.Transactions.Rollback (Tx);
+         Result := Database_Failure (Status, "read exclusive lease");
+         return;
+      elsif Lease.Kind /= Lease_Record then
+         Database.Transactions.Rollback (Tx);
+         Result := Make_Result (Integrity_Error, "lease identity has the wrong record kind", "qm.lease.kind");
+         return;
+      else
+         declare
+            Previous_Expiration : Interfaces.Unsigned_64;
+         begin
+            Previous_Expiration := Interfaces.Unsigned_64'Value (To_String (Lease.Payload));
+            if Previous_Expiration > Now and then To_String (Lease.State) /= Owner then
+               Database.Transactions.Rollback (Tx);
+               Result := Make_Result
+                 (Authorization_Required, "another coordinator owns the active lease", "qm.lease.active");
+               return;
+            elsif Previous_Expiration > Now and then Requested_Generation /= Lease.Generation then
+               Database.Transactions.Rollback (Tx);
+               Result := Make_Result
+                 (Invalid_Request, "lease generation precondition failed", "qm.lease.stale");
+               return;
+            elsif Lease.Generation = Interfaces.Unsigned_64'Last then
+               Database.Transactions.Rollback (Tx);
+               Result := Make_Result (Integrity_Error, "lease generation exhausted", "qm.lease.generation");
+               return;
+            end if;
+         exception
+            when Constraint_Error =>
+               Database.Transactions.Rollback (Tx);
+               Result := Make_Result (Integrity_Error, "lease expiration is malformed", "qm.lease.payload");
+               return;
+         end;
+         Lease.State := To_Unbounded_String (Owner);
+         Lease.Payload := To_Unbounded_String (Interfaces.Unsigned_64'Image (Expires_At));
+         Lease.Generation := Lease.Generation + 1;
+         Status := Entity_Tables.Update (Tx, Item.DB, Item.Table, Lease);
+      end if;
+      if Database.Status.Is_Ok (Status) then
+         Status := Database.Transactions.Commit (Tx);
+      else
+         Database.Transactions.Rollback (Tx);
+      end if;
+      if Database.Status.Is_Ok (Status) then
+         if New_Row then
+            Item.Next_Id := Item.Next_Id + 1;
+         end if;
+         Generation := Lease.Generation;
+         Result := Make_Result (Success);
+      else
+         Result := Database_Failure (Status, "commit exclusive lease");
+      end if;
+   end Acquire_Exclusive_Lease;
+
+   procedure Release_Lease
+     (Item         : in out Store;
+      Resource_Key : String;
+      Owner        : String;
+      Generation   : Interfaces.Unsigned_64;
+      Result       : out Operation_Result) is
+      Tx     : Database.Transactions.Transaction;
+      Lease  : Stored_Entity;
+      Status : Database.Status.Result;
+      Key    : constant String := "lease:" & Resource_Key;
+   begin
+      Begin_Write (Item, Tx, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Find_In_Transaction (Item, Tx, Key, Lease, Status);
+      if Status.Code = Database.Status.Not_Found then
+         Database.Transactions.Rollback (Tx);
+         Result := Make_Result (Not_Found, "lease does not exist", "qm.lease.missing");
+         return;
+      elsif not Database.Status.Is_Ok (Status) then
+         Database.Transactions.Rollback (Tx);
+         Result := Database_Failure (Status, "read lease for release");
+         return;
+      elsif Lease.Kind /= Lease_Record then
+         Database.Transactions.Rollback (Tx);
+         Result := Make_Result (Integrity_Error, "lease identity has the wrong record kind", "qm.lease.kind");
+         return;
+      elsif To_String (Lease.State) /= Owner or else Lease.Generation /= Generation then
+         Database.Transactions.Rollback (Tx);
+         Result := Make_Result (Authorization_Required, "lease ownership changed", "qm.lease.fenced");
+         return;
+      end if;
+
+      Lease.Payload := To_Unbounded_String (Interfaces.Unsigned_64'Image (0));
+      Status := Entity_Tables.Update (Tx, Item.DB, Item.Table, Lease);
+      if Database.Status.Is_Ok (Status) then
+         Status := Database.Transactions.Commit (Tx);
+      else
+         Database.Transactions.Rollback (Tx);
+      end if;
+      if Database.Status.Is_Ok (Status) then
+         Result := Make_Result (Success);
+      else
+         Result := Database_Failure (Status, "commit lease release");
+      end if;
+   end Release_Lease;
 
    function Operation_Key (Operation : Quality_Manager.Identities.Operation_Id) return String is
      ("journal:"

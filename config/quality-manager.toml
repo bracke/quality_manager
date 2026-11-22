@@ -7,6 +7,7 @@ policy = "../ada_quality/quality-policy.toml"
 
 [integrations]
 ada_quality = "../ada_quality/bin/ada-quality"
+ada_quality_summary = "../ada_quality_summary/bin/ada-quality-summary"
 improve = "../improve/bin/improve"
 improve_config = "../improve/config/improve.toml"
 improve_state = "var/improve.db"

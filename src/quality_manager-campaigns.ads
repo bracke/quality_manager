@@ -1,4 +1,5 @@
 with Ada.Strings.Unbounded;
+with Quality_Manager.Integrations.Summary;
 with Quality_Manager.Results;
 with Quality_Manager.Scheduler;
 
@@ -30,6 +31,11 @@ package Quality_Manager.Campaigns is
    procedure Reconcile
      (Item : in out Context; Campaign_Id : String;
       Result : out Quality_Manager.Results.Operation_Result);
+   procedure Reconcile
+     (Item        : in out Context;
+      Summary     : Quality_Manager.Integrations.Summary.Adapter;
+      Campaign_Id : String;
+      Result      : out Quality_Manager.Results.Operation_Result);
 
    procedure Update_Target
      (Item          : in out Context;

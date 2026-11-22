@@ -2,7 +2,9 @@ with Ada.Calendar;
 with Ada.Calendar.Conversions;
 with Ada.Calendar.Formatting;
 with Ada.Strings.Fixed;
+with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Database.UUIDs;
 with Jsonlib.Documents;
 with Jsonlib.Errors;
 with Jsonlib.Parsers;
@@ -28,6 +30,12 @@ package body Quality_Manager.Maintenance is
    use type Quality_Manager.Scheduler.Work_Resource;
    use type Quality_Manager.Storage.Record_Kind;
    use Quality_Manager.Results;
+
+   function Unix_Now return Interfaces.Unsigned_64;
+
+   procedure Renew_Coordinator_Lease
+     (Item   : in out Context;
+      Result : out Operation_Result);
 
    function Due_Reason (Evidence : Evidence_Identity) return Assessment_Reason is
    begin
@@ -126,6 +134,23 @@ package body Quality_Manager.Maintenance is
       Value := Document.As_Boolean (Node);
       return True;
    end Boolean_Field;
+
+   function JSON_String (Document, Name : String) return String is
+      Quote  : constant Character := Character'Val (34);
+      Prefix : constant String := Quote & Name & Quote & ":" & Quote;
+      First  : Natural := Ada.Strings.Fixed.Index (Document, Prefix);
+      Last   : Natural;
+   begin
+      if First = 0 then
+         return "";
+      end if;
+      First := First + Prefix'Length;
+      Last := First;
+      while Last <= Document'Last and then Document (Last) /= Quote loop
+         Last := Last + 1;
+      end loop;
+      return (if Last > Document'Last then "" else Document (First .. Last - 1));
+   end JSON_String;
 
    function Selected (Selector : String; Id : Positive; Path : String) return Boolean is
      (Selector = ""
@@ -377,6 +402,10 @@ package body Quality_Manager.Maintenance is
            (Item.Database.all, Work_Id, From, Target, "blocked", Diagnostic, "", Result);
       end Stop_Work;
    begin
+      Renew_Coordinator_Lease (Item, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
       Quality_Manager.Storage.Read (Item.Database.all, Work_Id, Work, Result);
       if Result.Kind /= Success then
          return;
@@ -528,6 +557,24 @@ package body Quality_Manager.Maintenance is
       return (if Value < 0 then 0 else Interfaces.Unsigned_64 (Value));
    end Unix_Now;
 
+   procedure Renew_Coordinator_Lease
+     (Item   : in out Context;
+      Result : out Operation_Result) is
+      Now      : constant Interfaces.Unsigned_64 := Unix_Now;
+      Duration : constant Interfaces.Unsigned_64 := Interfaces.Unsigned_64 (Item.Lease_Seconds);
+   begin
+      if Length (Item.Lease_Owner) = 0 then
+         Result := Make_Result (Success);
+      elsif Duration > Interfaces.Unsigned_64'Last - Now then
+         Result := Make_Result
+           (Integrity_Error, "coordinator lease expiration is out of range", "qm.maintenance.coordinator-lease");
+      else
+         Quality_Manager.Storage.Acquire_Exclusive_Lease
+           (Item.Database.all, "active-coordinator", To_String (Item.Lease_Owner),
+            Now, Now + Duration, Item.Lease_Generation, Result);
+      end if;
+   end Renew_Coordinator_Lease;
+
    procedure Reconcile_Authorized_Remediations
      (Item             : in out Context;
       Project_Selector : String;
@@ -584,6 +631,11 @@ package body Quality_Manager.Maintenance is
          return;
       end if;
       for Stored of Values loop
+         Renew_Coordinator_Lease (Item, Local);
+         if Local.Kind /= Success then
+            Result := Local;
+            return;
+         end if;
          if To_String (Stored.State) in Quality_Manager.Model.Awaiting_Approval'Image |
                                         Quality_Manager.Model.Published'Image |
                                         Quality_Manager.Model.Queued'Image |
@@ -676,6 +728,11 @@ package body Quality_Manager.Maintenance is
       end if;
       Expires := Now + Interfaces.Unsigned_64 (Item.Maximum_Task_Seconds) + 60;
       loop
+         Renew_Coordinator_Lease (Item, Local);
+         if Local.Kind /= Success then
+            Result := Local;
+            return;
+         end if;
          Quality_Manager.Scheduler.Take_Next (Item.Queue.all, Work_Id, Resource, Found);
          exit when not Found;
          if Resource not in Quality_Manager.Scheduler.Agent_Resource |
@@ -752,6 +809,11 @@ package body Quality_Manager.Maintenance is
          return;
       end if;
       for Stored of Values loop
+         Renew_Coordinator_Lease (Item, Local);
+         if Local.Kind /= Success then
+            Result := Local;
+            return;
+         end if;
          if To_String (Stored.State) = Quality_Manager.Model.Awaiting_Assessment'Image then
             Quality_Manager.Storage.Decoding.Read_Work
               (Item.Database.all, To_String (Stored.Entity_Key), Work, Result);
@@ -888,6 +950,86 @@ package body Quality_Manager.Maintenance is
       end if;
    end Reconcile_Authorized_Work;
 
+   procedure Reconcile_Cycles
+     (Item   : in out Context;
+      Result : out Operation_Result) is
+      Cycles : Quality_Manager.Storage.Entity_Vectors.Vector;
+      Work   : Quality_Manager.Storage.Entity_Vectors.Vector;
+   begin
+      if Item.Database = null then
+         Result := Make_Result
+           (Not_Ready, "maintenance context is not initialized", "qm.maintenance.context");
+         return;
+      end if;
+      Quality_Manager.Storage.List
+        (Item.Database.all, Quality_Manager.Storage.Cycle_Record, Cycles, 100_000, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Quality_Manager.Storage.List
+        (Item.Database.all, Quality_Manager.Storage.Work_Item_Record, Work, 100_000, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      for Cycle of Cycles loop
+         if not Cycle.Terminal
+           and then To_String (Cycle.State) = Quality_Manager.Model.Work_State'Image
+             (Quality_Manager.Model.Queued)
+           and then Length (Cycle.Entity_Key) > 6
+           and then To_String (Cycle.Entity_Key)
+             (To_String (Cycle.Entity_Key)'First .. To_String (Cycle.Entity_Key)'First + 5) = "cycle:"
+         then
+            declare
+               Key      : constant String := To_String (Cycle.Entity_Key);
+               Cycle_Id : constant String := Key (Key'First + 6 .. Key'Last);
+               Match    : Natural := 0;
+               Work_Key : Unbounded_String;
+               State    : Quality_Manager.Model.Work_State := Quality_Manager.Model.Discovered;
+            begin
+               for Candidate of Work loop
+                  if JSON_String (To_String (Candidate.Payload), "global_remediation")
+                    = "assessment:" & Cycle_Id
+                  then
+                     Match := Match + 1;
+                     Work_Key := Candidate.Entity_Key;
+                     begin
+                        State := Quality_Manager.Model.Work_State'Value (To_String (Candidate.State));
+                     exception
+                        when Constraint_Error =>
+                           Result := Make_Result
+                             (Incompatible_Contract, "cycle work has an unknown state",
+                              "qm.maintenance.cycle-work-state");
+                           return;
+                     end;
+                  end if;
+               end loop;
+               if Match > 1 then
+                  Result := Make_Result
+                    (Integrity_Error, "cycle identifies multiple assessment work items",
+                     "qm.maintenance.cycle-work");
+                  return;
+               elsif Match = 1
+                 and then State in Quality_Manager.Model.Verified | Quality_Manager.Model.Inconclusive
+                    | Quality_Manager.Model.Blocked | Quality_Manager.Model.Needs_Intervention
+                    | Quality_Manager.Model.Failed | Quality_Manager.Model.Cancelled
+                    | Quality_Manager.Model.Superseded
+               then
+                  Quality_Manager.Storage.Complete_Cycle
+                    (Item.Database.all, Key, Quality_Manager.Model.Queued,
+                     "event:" & Cycle_Id & ":maintenance:completed",
+                     "maintenance coordination pass completed",
+                     "work:" & To_String (Work_Key) & ":" &
+                       Quality_Manager.Model.Work_State'Image (State), Result);
+                  if Result.Kind /= Success then
+                     return;
+                  end if;
+               end if;
+            end;
+         end if;
+      end loop;
+      Result := Make_Result (Success);
+   end Reconcile_Cycles;
+
    procedure Run_Cycle
      (Item             : in out Context;
       Project_Selector : String := "";
@@ -902,6 +1044,14 @@ package body Quality_Manager.Maintenance is
    begin
       if Item.Database = null or else Item.Queue = null then
          Result := Make_Result (Not_Ready, "maintenance context is not initialized", "qm.maintenance.context");
+         return;
+      end if;
+      Renew_Coordinator_Lease (Item, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Reconcile_Cycles (Item, Result);
+      if Result.Kind /= Success then
          return;
       end if;
       Quality_Manager.Integrations.Quality.Resolve_Database_Identity
@@ -1046,6 +1196,9 @@ package body Quality_Manager.Maintenance is
             Reconcile_Authorized_Work (Item, Project_Selector, Now, Result);
          end;
       end if;
+      if Result.Kind = Success then
+         Reconcile_Cycles (Item, Result);
+      end if;
    exception
       when others =>
          Result := Make_Result (Integrity_Error, "maintenance cycle failed", "qm.maintenance.internal");
@@ -1073,11 +1226,35 @@ package body Quality_Manager.Maintenance is
       Item      : Context;
       Result    : Operation_Result;
       Close_Result : Operation_Result;
+      Lease_Result : Operation_Result;
+      Lease_Owner : constant String := "quality-manager:"
+        & Ada.Strings.UTF_Encoding.Wide_Wide_Strings.Encode
+            (Database.UUIDs.UUID_To_String (Database.UUIDs.Generate_UUID));
+      Lease_Generation : Interfaces.Unsigned_64 := 0;
+      Lease_Held : Boolean := False;
    begin
       Quality_Manager.Config.Load (Config_Path, Config_Required, Settings, Result);
       if Result.Kind = Success then
          Quality_Manager.Storage.Open
            (Store, To_String (Settings.Coordinator_Database), True, Result);
+      end if;
+      if Result.Kind = Success then
+         declare
+            Now : constant Interfaces.Unsigned_64 := Unix_Now;
+            Duration : constant Interfaces.Unsigned_64 :=
+              Interfaces.Unsigned_64 (Settings.Maximum_Task_Seconds) + 300;
+         begin
+            if Duration > Interfaces.Unsigned_64'Last - Now then
+               Result := Make_Result
+                 (Integrity_Error, "coordinator lease expiration is out of range",
+                  "qm.maintenance.coordinator-lease");
+            else
+               Quality_Manager.Storage.Acquire_Exclusive_Lease
+                 (Store, "active-coordinator", Lease_Owner, Now, Now + Duration,
+                  Lease_Generation, Result);
+               Lease_Held := Result.Kind = Success;
+            end if;
+         end;
       end if;
       if Result.Kind = Success then
          Quality_Manager.Scheduler.Initialize (Scheduler);
@@ -1094,7 +1271,17 @@ package body Quality_Manager.Maintenance is
          Initialize
            (Item, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality, Planner, Runner,
             Settings.Maximum_Task_Seconds, Settings.Remediation_Attempts);
+         Item.Lease_Owner := To_Unbounded_String (Lease_Owner);
+         Item.Lease_Generation := Lease_Generation;
+         Item.Lease_Seconds := Settings.Maximum_Task_Seconds + 300;
          Run_Cycle (Item, Project_Selector, Dry_Run or else Settings.Dry_Run, Result);
+      end if;
+      if Lease_Held then
+         Quality_Manager.Storage.Release_Lease
+           (Store, "active-coordinator", Lease_Owner, Item.Lease_Generation, Lease_Result);
+         if Result.Kind = Success and then Lease_Result.Kind /= Success then
+            Result := Lease_Result;
+         end if;
       end if;
       Quality_Manager.Scheduler.Shutdown (Scheduler);
       Quality_Manager.Storage.Close (Store, Result => Close_Result);
@@ -1104,5 +1291,20 @@ package body Quality_Manager.Maintenance is
       if Result.Kind /= Success then
          raise Maintenance_Error with Message (Result);
       end if;
+   exception
+      when Maintenance_Error =>
+         raise;
+      when others =>
+         if Lease_Held and then Quality_Manager.Storage.Is_Open (Store) then
+            Quality_Manager.Storage.Release_Lease
+              (Store, "active-coordinator", Lease_Owner,
+               (if Item.Lease_Generation = 0 then Lease_Generation else Item.Lease_Generation),
+               Lease_Result);
+         end if;
+         Quality_Manager.Scheduler.Shutdown (Scheduler);
+         if Quality_Manager.Storage.Is_Open (Store) then
+            Quality_Manager.Storage.Close (Store, Result => Close_Result);
+         end if;
+         raise Maintenance_Error with "configured maintenance cycle failed unexpectedly";
    end Run_Configured_Cycle;
 end Quality_Manager.Maintenance;

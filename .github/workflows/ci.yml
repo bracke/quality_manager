@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-manager-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out Quality Manager
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: quality_manager
+
+      - name: Check out sibling crates
+        uses: bracke/project_tools/.github/actions/checkout-ada-siblings@main
+        with:
+          root: quality_manager
+
+      - name: Set up Alire
+        uses: alire-project/setup-alire@1ff7d9224297858cc9ecce29b08bc6109f93e49a # v6
+        with:
+          toolchain: gnat_native=15.2.1 gprbuild
+
+      - name: Select complete dependency solution
+        run: alr settings --global --set solver.timeout 600
+
+      - name: Show selected compiler
+        working-directory: quality_manager
+        run: alr exec -- gnatls --version
+
+      - name: Validation build
+        working-directory: quality_manager
+        env:
+          QUALITY_MANAGER_WARNINGS_AS_ERRORS: "true"
+        run: alr build --validation -- -f
+
+      - name: AUnit suite
+        working-directory: quality_manager
+        env:
+          QUALITY_MANAGER_WARNINGS_AS_ERRORS: "true"
+        run: alr test
+
+      - name: Verify source-only manifest
+        working-directory: quality_manager
+        run: >-
+          test -z "$(git ls-files |
+          grep -E '(^|/)(alire|bin|obj|coverage|var)(/|$)|\.(gcda|gcno|gcov|db|database)$')"
+
+      - name: Build source archive
+        working-directory: quality_manager
+        run: git archive --format=tar.gz --output="${RUNNER_TEMP}/quality_manager-source.tar.gz" HEAD
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-manager-source
+          path: ${{ runner.temp }}/quality_manager-source.tar.gz

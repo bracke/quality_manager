@@ -28,6 +28,7 @@ package body Quality_Manager.Config is
       To_Unbounded_String ("quality.database"),
       To_Unbounded_String ("quality.policy"),
       To_Unbounded_String ("integrations.ada_quality"),
+      To_Unbounded_String ("integrations.ada_quality_summary"),
       To_Unbounded_String ("integrations.improve"),
       To_Unbounded_String ("integrations.improve_config"),
       To_Unbounded_String ("integrations.improve_state"),
@@ -43,6 +44,7 @@ package body Quality_Manager.Config is
       Quality_Database     => Null_Unbounded_String,
       Quality_Policy       => Null_Unbounded_String,
       Ada_Quality_Executable => To_Unbounded_String ("ada-quality"),
+      Ada_Quality_Summary_Executable => To_Unbounded_String ("ada-quality-summary"),
       Improve_Executable   => To_Unbounded_String ("improve"),
       Improve_Config       => Null_Unbounded_String,
       Improve_State        => To_Unbounded_String ("var/improve.db"),
@@ -298,6 +300,20 @@ package body Quality_Manager.Config is
             return;
          end if;
          Item.Ada_Quality_Executable := To_Unbounded_String (Value);
+      end;
+
+      declare
+         Value : constant String := External_Reader.Get_String
+           (Store, "integrations.ada_quality_summary",
+            To_String (Item.Ada_Quality_Summary_Executable));
+      begin
+         if Value'Length = 0 then
+            Result := Make_Result
+              (Invalid_Request, "integrations.ada_quality_summary must not be empty",
+               "qm.config.empty-executable");
+            return;
+         end if;
+         Item.Ada_Quality_Summary_Executable := To_Unbounded_String (Value);
       end;
 
       declare

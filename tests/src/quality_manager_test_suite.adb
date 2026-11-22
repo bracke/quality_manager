@@ -115,6 +115,10 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Config.Load (Base_Path, True, Settings, Result);
       Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "empty Ada Quality executable is rejected");
 
+      Write_Text ("[integrations]" & ASCII.LF & "ada_quality_summary = """"" & ASCII.LF);
+      Quality_Manager.Config.Load (Base_Path, True, Settings, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "empty Summary executable is rejected");
+
       Write_Text ("[integrations]" & ASCII.LF & "improve = """"" & ASCII.LF);
       Quality_Manager.Config.Load (Base_Path, True, Settings, Result);
       Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "empty Improve executable is rejected");
@@ -128,6 +132,7 @@ package body Quality_Manager_Test_Suite is
          & "[quality]" & ASCII.LF & "database = ""/tmp/quality.db""" & ASCII.LF
          & "policy = ""/tmp/quality-policy.toml""" & ASCII.LF
          & "[integrations]" & ASCII.LF & "ada_quality = ""ada-quality-fixture""" & ASCII.LF
+         & "ada_quality_summary = ""ada-quality-summary-fixture""" & ASCII.LF
          & "improve = ""improve-fixture""" & ASCII.LF
          & "improve_config = ""/tmp/improve.toml""" & ASCII.LF
          & "improve_state = ""/tmp/improve.db""" & ASCII.LF
@@ -144,6 +149,7 @@ package body Quality_Manager_Test_Suite is
          and then Settings.Maximum_Task_Seconds = 120
          and then Settings.Remediation_Attempts = 4
          and then To_String (Settings.Quality_Policy) = "/tmp/quality-policy.toml"
+         and then To_String (Settings.Ada_Quality_Summary_Executable) = "ada-quality-summary-fixture"
          and then To_String (Settings.Improve_Executable) = "improve-fixture"
          and then To_String (Settings.Improve_Config) = "/tmp/improve.toml"
          and then To_String (Settings.Improve_State) = "/tmp/improve.db"
@@ -564,8 +570,9 @@ package body Quality_Manager_Test_Suite is
          Response : Quality_Manager.Integrations.Processes.Execution_Result;
       begin
          Request.Executable := To_Unbounded_String
-           ((if Ada.Directories.Exists ("bin/quality-manager")
-             then "bin/quality-manager" else "../bin/quality-manager"));
+           ((if Ada.Directories.Exists (Ada.Directories.Current_Directory & "/bin/quality-manager")
+             then Ada.Directories.Current_Directory & "/bin/quality-manager"
+             else Ada.Directories.Current_Directory & "/../bin/quality-manager"));
          Request.Arguments := Arguments;
          Request.Working_Directory := To_Unbounded_String (Ada.Directories.Current_Directory);
          Request.Environment.Append
@@ -624,6 +631,7 @@ package body Quality_Manager_Test_Suite is
          "[coordinator]" & ASCII.LF & "database = """ & Database_Path & """" & ASCII.LF &
          "[quality]" & ASCII.LF & "database = ""quality.db""" & ASCII.LF &
          "[integrations]" & ASCII.LF & "ada_quality = """ & Fixture_Path & """" & ASCII.LF &
+         "ada_quality_summary = """ & Fixture_Path & """" & ASCII.LF &
          "model_runner = """ & Fixture_Path & """" & ASCII.LF &
          "[autonomy]" & ASCII.LF & "dry_run = true" & ASCII.LF);
 
@@ -937,7 +945,14 @@ package body Quality_Manager_Test_Suite is
       Path      : constant String := "/tmp/quality-manager-phase2.database";
       Nested_Root : constant String := "/tmp/quality-manager-parent-creation";
       Nested_Path : constant String := Nested_Root & "/nested/coordinator.database";
+      Crash_Path  : constant String := "/tmp/quality-manager-crash-recovery.database";
+      Fixture_Path : constant String :=
+        (if Ada.Directories.Exists (Ada.Directories.Current_Directory & "/tests/bin/qm_adapter_fixture")
+         then Ada.Directories.Current_Directory & "/tests/bin/qm_adapter_fixture"
+         else Ada.Directories.Current_Directory & "/bin/qm_adapter_fixture");
       Store     : Quality_Manager.Storage.Store;
+      Contender : Quality_Manager.Storage.Store;
+      Crash_Store : Quality_Manager.Storage.Store;
       Result    : Quality_Manager.Results.Operation_Result;
       Work      : Quality_Manager.Storage.Stored_Entity :=
         (Internal_Id => 1,
@@ -964,6 +979,10 @@ package body Quality_Manager_Test_Suite is
          Remove (Path & ".wal");
          Remove (Path & ".journal");
          Remove (Path & ".lock");
+         Remove (Crash_Path);
+         Remove (Crash_Path & ".wal");
+         Remove (Crash_Path & ".journal");
+         Remove (Crash_Path & ".lock");
       end Cleanup;
 
    begin
@@ -978,6 +997,36 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Close (Store, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success, "nested coordinator database closes");
       Ada.Directories.Delete_Tree (Nested_Root);
+
+      Cleanup;
+      declare
+         Request  : Quality_Manager.Integrations.Processes.Request;
+         Response : Quality_Manager.Integrations.Processes.Execution_Result;
+      begin
+         Request.Executable := To_Unbounded_String (Fixture_Path);
+         Request.Arguments.Append (To_Unbounded_String ("coordinator-crash"));
+         Request.Arguments.Append (To_Unbounded_String (Crash_Path));
+         Request.Timeout_Seconds := 10;
+         Request.Output_Limit := 4_096;
+         Quality_Manager.Integrations.Processes.Execute (Request, Response);
+         Assert
+           (Response.Started and then not Response.Timed_Out and then Response.Exit_Status = 77,
+            "crash fixture terminates without finalizing the coordinator store");
+      end;
+      Quality_Manager.Storage.Open (Crash_Store, Crash_Path, True, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success,
+         "coordinator database reopens after abrupt process termination: " &
+           Quality_Manager.Results.Message (Result));
+      Quality_Manager.Storage.Recovery_Entries (Crash_Store, Recovery, 10, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success and then Natural (Recovery.Length) = 1
+         and then To_String (Recovery.First_Element.State) =
+           Quality_Manager.Journal.Journal_State'Image (Quality_Manager.Journal.Prepared),
+         "prepared journal intent survives abrupt process termination");
+      Quality_Manager.Storage.Close (Crash_Store, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "recovered crash database closes");
+      Cleanup;
 
       Assert
         (Quality_Manager.Maintenance.Due_Reason
@@ -1123,6 +1172,67 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Acquire_Lease (Store, "project:7", "owner-a", 1, 2, 200, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success, "current lease generation renewed");
 
+      declare
+         Generation : Interfaces.Unsigned_64 := 0;
+      begin
+         Quality_Manager.Storage.Acquire_Exclusive_Lease
+           (Store, "coordinator", "owner-a", 100, 200, Generation, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success and then Generation = 1,
+            "exclusive coordinator lease acquired");
+         Quality_Manager.Storage.Open (Contender, Path, True, Result);
+         if Result.Kind = Quality_Manager.Results.Success then
+            Quality_Manager.Storage.Acquire_Exclusive_Lease
+              (Contender, "coordinator", "owner-b", 150, 250, Generation, Result);
+            Assert
+              (Result.Kind = Quality_Manager.Results.Authorization_Required,
+               "competing coordinator is rejected while the lease is active");
+         else
+            Assert
+              (Result.Kind = Quality_Manager.Results.Temporarily_Unavailable,
+               "database lock rejects a competing coordinator: " & Quality_Manager.Results.Message (Result));
+         end if;
+         Quality_Manager.Storage.Release_Lease
+           (Store, "coordinator", "owner-a", 0, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Authorization_Required,
+            "obsolete coordinator generation cannot release a lease");
+         Quality_Manager.Storage.Acquire_Exclusive_Lease
+           (Store, "coordinator", "owner-b", 201, 300, Generation, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success and then Generation = 2,
+            "expired coordinator lease is recovered with a new fencing generation");
+         Quality_Manager.Storage.Release_Lease
+           (Store, "coordinator", "owner-a", 1, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Authorization_Required,
+            "previous coordinator cannot release the recovered lease");
+         Quality_Manager.Storage.Release_Lease
+           (Store, "coordinator", "owner-b", Generation, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "current coordinator releases its lease");
+         Quality_Manager.Storage.Acquire_Exclusive_Lease
+           (Store, "coordinator", "owner-c", 202, 350, Generation, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success and then Generation = 3,
+            "released coordinator lease is immediately reusable");
+         Quality_Manager.Storage.Release_Lease
+           (Store, "coordinator", "owner-c", Generation, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "recovered coordinator lease releases cleanly");
+         for Attempt in 1 .. 128 loop
+            Quality_Manager.Storage.Acquire_Exclusive_Lease
+              (Store, "coordinator", "stress-owner", Interfaces.Unsigned_64 (Attempt),
+               Interfaces.Unsigned_64 (Attempt + 60), Generation, Result);
+            Assert (Result.Kind = Quality_Manager.Results.Success, "lease stress acquisition succeeds");
+            Quality_Manager.Storage.Release_Lease
+              (Store, "coordinator", "stress-owner", Generation, Result);
+            Assert (Result.Kind = Quality_Manager.Results.Success, "lease stress release succeeds");
+         end loop;
+         if Quality_Manager.Storage.Is_Open (Contender) then
+            Quality_Manager.Storage.Close (Contender, Result);
+            Assert (Result.Kind = Quality_Manager.Results.Success, "competing coordinator store closes");
+         end if;
+      end;
+
       Quality_Manager.Storage.Prepare_Operation
         (Store, 10, "assessment", "run authoritative check", "aq:operation-10", Result);
       Assert (Result.Kind = Quality_Manager.Results.Success, "journal intent prepared");
@@ -1203,6 +1313,8 @@ package body Quality_Manager_Test_Suite is
       Cleanup;
    exception
       when others =>
+         Quality_Manager.Storage.Close (Crash_Store, Result);
+         Quality_Manager.Storage.Close (Contender, Result);
          Quality_Manager.Storage.Close (Store, Result);
          Cleanup;
          raise;
@@ -1275,6 +1387,95 @@ package body Quality_Manager_Test_Suite is
                  "unknown persisted journal state is rejected");
       end;
 
+      declare
+         Work_Value : Quality_Manager.Storage.Schema.Work_Item;
+         Dispatch_Value : Quality_Manager.Storage.Schema.Dispatch;
+         Approval_Value : Quality_Manager.Storage.Schema.Approval;
+         Stored : Quality_Manager.Storage.Stored_Entity :=
+           Entity ("work:decode-kind", Quality_Manager.Storage.Project_Record);
+         Project : constant Quality_Manager.Identities.Project_Key :=
+           (To_Unbounded_String ("database"), 1, To_Unbounded_String ("/project"));
+         Approval_Work : constant Quality_Manager.Storage.Schema.Work_Item :=
+           (Work_Id => To_Unbounded_String ("work:approval-decode"),
+            Global_Remediation => To_Unbounded_String ("remediation:approval-decode"),
+            Project => Project, Origin => Quality_Manager.Model.Maintenance,
+            Finding_Identities => To_Unbounded_String ("AQ-01"), Priority => 1,
+            Baseline_Assessment_Run => 1,
+            Improve_Plan_Id => To_Unbounded_String ("PLAN"), Improve_Revision => 1,
+            Improve_Task_Id => To_Unbounded_String ("TASK"),
+            Improve_Content_SHA256 => To_Unbounded_String ("content"),
+            Planned_Source_Fingerprint => To_Unbounded_String ("source"),
+            Effective_Policy_Digest => To_Unbounded_String ("policy"),
+            State => Quality_Manager.Model.Awaiting_Approval,
+            Outcome => Quality_Manager.Model.No_Outcome);
+      begin
+         Quality_Manager.Storage.Put (Store, Stored, Result);
+         Quality_Manager.Storage.Decoding.Read_Work (Store, "work:decode-kind", Work_Value, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+                 "work decoder rejects a conflicting record kind");
+
+         Stored := Entity ("work:decode-json");
+         Stored.Payload := To_Unbounded_String ("{");
+         Quality_Manager.Storage.Put (Store, Stored, Result);
+         Quality_Manager.Storage.Decoding.Read_Work (Store, "work:decode-json", Work_Value, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+                 "work decoder rejects malformed JSON");
+
+         Stored := Entity ("work:decode-fields");
+         Stored.Payload := To_Unbounded_String ("{}");
+         Quality_Manager.Storage.Put (Store, Stored, Result);
+         Quality_Manager.Storage.Decoding.Read_Work (Store, "work:decode-fields", Work_Value, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+                 "work decoder rejects incomplete fields");
+
+         Stored := Entity ("work:decode-values");
+         Stored.Payload := To_Unbounded_String
+           ("{""global_remediation"":""remediation"",""project"":{" &
+            """quality_database_id"":""database"",""quality_project_id"":1," &
+            """canonical_path"":""/project""},""origin"":""UNKNOWN""," &
+            """findings"":""AQ-01"",""priority"":1,""baseline_assessment_run"":1," &
+            """plan_id"":""PLAN"",""plan_revision"":1,""task_id"":""TASK""," &
+            """content_sha256"":""content"",""planned_source_fingerprint"":""source""," &
+            """policy_digest"":""policy"",""outcome"":""NO_OUTCOME""}");
+         Quality_Manager.Storage.Put (Store, Stored, Result);
+         Quality_Manager.Storage.Decoding.Read_Work (Store, "work:decode-values", Work_Value, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Incompatible_Contract,
+                 "work decoder rejects unknown enum values");
+
+         Stored := Entity ("active-dispatch:decode-kind", Quality_Manager.Storage.Project_Record);
+         Quality_Manager.Storage.Put (Store, Stored, Result);
+         Quality_Manager.Storage.Decoding.Read_Active_Dispatch
+           (Store, "decode-kind", Dispatch_Value, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+                 "dispatch decoder rejects a conflicting record kind");
+
+         Stored := Entity ("active-dispatch:decode-json", Quality_Manager.Storage.Dispatch_Record);
+         Stored.State := To_Unbounded_String (Quality_Manager.Model.Published'Image);
+         Stored.Payload := To_Unbounded_String ("{");
+         Quality_Manager.Storage.Put (Store, Stored, Result);
+         Quality_Manager.Storage.Decoding.Read_Active_Dispatch
+           (Store, "decode-json", Dispatch_Value, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+                 "dispatch decoder rejects malformed JSON");
+
+         Stored := Entity ("active-dispatch:decode-fields", Quality_Manager.Storage.Dispatch_Record);
+         Stored.State := To_Unbounded_String (Quality_Manager.Model.Published'Image);
+         Stored.Payload := To_Unbounded_String ("{}");
+         Quality_Manager.Storage.Put (Store, Stored, Result);
+         Quality_Manager.Storage.Decoding.Read_Active_Dispatch
+           (Store, "decode-fields", Dispatch_Value, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+                 "dispatch decoder rejects incomplete fields");
+
+         Stored := Entity ("approval:decode", Quality_Manager.Storage.Approval_Record);
+         Stored.Payload := To_Unbounded_String ("{");
+         Quality_Manager.Storage.Put (Store, Stored, Result);
+         Quality_Manager.Storage.Decoding.Find_Approval_For_Work
+           (Store, Approval_Work, 10, Approval_Value, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+                 "approval lookup rejects malformed durable evidence");
+      end;
+
       Quality_Manager.Storage.Put_Current (Store, Entity ("work:not-current"), Result);
       Assert (Result.Kind = Quality_Manager.Results.Authorization_Required,
               "append-only record class cannot use current-record replacement");
@@ -1316,6 +1517,63 @@ package body Quality_Manager_Test_Suite is
         (Store, "boundary", "owner", 1, 2, 10, Result);
       Assert (Result.Kind = Quality_Manager.Results.Invalid_Request,
               "new lease requires generation zero");
+      declare
+         Generation : Interfaces.Unsigned_64 := 0;
+         Wrong_Kind : constant Quality_Manager.Storage.Stored_Entity :=
+           (Internal_Id => 1,
+            Kind => Quality_Manager.Storage.Project_Record,
+            Entity_Key => To_Unbounded_String ("lease:wrong-kind"),
+            State => To_Unbounded_String ("owner"),
+            Payload => To_Unbounded_String ("100"),
+            Terminal => False,
+            Generation => 1);
+         Malformed : constant Quality_Manager.Storage.Stored_Entity :=
+           (Internal_Id => 1,
+            Kind => Quality_Manager.Storage.Lease_Record,
+            Entity_Key => To_Unbounded_String ("lease:malformed"),
+            State => To_Unbounded_String ("owner"),
+            Payload => To_Unbounded_String ("not-a-time"),
+            Terminal => False,
+            Generation => 1);
+      begin
+         Quality_Manager.Storage.Acquire_Exclusive_Lease
+           (Store, "", "owner", 10, 20, Generation, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Invalid_Request,
+                 "exclusive lease requires a resource identity");
+         Quality_Manager.Storage.Acquire_Exclusive_Lease
+           (Store, "expired", "owner", 20, 20, Generation, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Invalid_Request,
+                 "exclusive lease requires a future expiration");
+         Quality_Manager.Storage.Put (Store, Wrong_Kind, Result);
+         Quality_Manager.Storage.Acquire_Exclusive_Lease
+           (Store, "wrong-kind", "owner", 10, 20, Generation, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+                 "exclusive lease rejects a conflicting record kind");
+         Quality_Manager.Storage.Release_Lease
+           (Store, "wrong-kind", "owner", 1, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+                 "lease release rejects a conflicting record kind");
+         Quality_Manager.Storage.Put (Store, Malformed, Result);
+         Quality_Manager.Storage.Acquire_Exclusive_Lease
+           (Store, "malformed", "owner", 10, 20, Generation, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+                 "exclusive lease rejects malformed expiration evidence");
+         Quality_Manager.Storage.Release_Lease
+           (Store, "missing-release", "owner", 1, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Not_Found,
+                 "release of an unknown lease is explicit");
+         Quality_Manager.Storage.Acquire_Exclusive_Lease
+           (Store, "renewal", "owner", 10, 20, Generation, Result);
+         Quality_Manager.Storage.Acquire_Exclusive_Lease
+           (Store, "renewal", "owner", 11, 30, Generation, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success and then Generation = 2,
+                 "the current coordinator renews its own active lease");
+         Generation := 1;
+         Quality_Manager.Storage.Acquire_Exclusive_Lease
+           (Store, "renewal", "owner", 12, 40, Generation, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Invalid_Request and then Generation = 1,
+                 "an obsolete fencing generation cannot renew an active lease");
+      end;
       Quality_Manager.Storage.Advance_Operation
         (Store, 500, Quality_Manager.Journal.Committed, Quality_Manager.Journal.Invoking,
          "external", "", Result);
@@ -1921,6 +2179,63 @@ package body Quality_Manager_Test_Suite is
          Authorization_Id    => To_Unbounded_String ("approval-1"),
          State               => Quality_Manager.Model.Published,
          Active              => True);
+      Project : constant Quality_Manager.Identities.Project_Key :=
+        (Quality_Database_Id => To_Unbounded_String ("database:dispatch-boundary"),
+         Quality_Project_Id => 7,
+         Canonical_Path => To_Unbounded_String ("/project"));
+
+      function Boundary_Work
+        (Name   : String;
+         State  : Quality_Manager.Model.Work_State;
+         Source : String) return Quality_Manager.Storage.Schema.Work_Item is
+        ((Work_Id => To_Unbounded_String ("work:" & Name),
+          Global_Remediation => To_Unbounded_String ("remediation:" & Name),
+          Project => Project,
+          Origin => Quality_Manager.Model.Maintenance,
+          Finding_Identities => To_Unbounded_String ("AQ-BOUNDARY"),
+          Priority => 1,
+          Baseline_Assessment_Run => 1,
+          Improve_Plan_Id => To_Unbounded_String ("PLAN-001"),
+          Improve_Revision => 1,
+          Improve_Task_Id => To_Unbounded_String ("IMP-001"),
+          Improve_Content_SHA256 => To_Unbounded_String ("content"),
+          Planned_Source_Fingerprint => To_Unbounded_String (Source),
+          Effective_Policy_Digest => To_Unbounded_String ("policy-fingerprint"),
+          State => State,
+          Outcome => Quality_Manager.Model.No_Outcome));
+
+      function Boundary_Mapping
+        (Name        : String;
+         Work_Id     : String;
+         Native_Task : String := "TASK-001") return Quality_Manager.Storage.Schema.Dispatch is
+        ((Dispatch_Id => To_Unbounded_String ("dispatch:" & Name),
+          Work_Id => To_Unbounded_String (Work_Id),
+          Logical_Remediation => To_Unbounded_String ("remediation:" & Name),
+          Improve_Task =>
+            (Plan_Id => To_Unbounded_String ("PLAN-001"),
+             Revision => 1,
+             Task_Id => To_Unbounded_String ("IMP-001")),
+          Native_Task_Id => To_Unbounded_String (Native_Task),
+          Authorization_Id => To_Unbounded_String ("approval:" & Name),
+          State => Quality_Manager.Model.Published,
+          Active => True));
+
+      procedure Persist_Boundary
+        (Name         : String;
+         State        : Quality_Manager.Model.Work_State;
+         Source       : String;
+         Native_Task  : String := "TASK-001";
+         Mapping_Work : String := "") is
+         Work : constant Quality_Manager.Storage.Schema.Work_Item := Boundary_Work (Name, State, Source);
+         Published : constant Quality_Manager.Storage.Schema.Dispatch :=
+           Boundary_Mapping
+             (Name, (if Mapping_Work = "" then "work:" & Name else Mapping_Work), Native_Task);
+      begin
+         Quality_Manager.Storage.Records.Save (Store, Work, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "boundary work persisted: " & Name);
+         Quality_Manager.Storage.Records.Save (Store, Published, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "boundary dispatch persisted: " & Name);
+      end Persist_Boundary;
 
       procedure Cleanup is
       begin
@@ -1974,6 +2289,161 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Dispatch.Bind_Published_Task (Store, Mapping, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success, "published native mapping retained exactly");
       Quality_Manager.Integrations.Runner.Initialize (Runner, "./bin/qm_adapter_fixture");
+
+      Quality_Manager.Dispatch.Queue_Persisted (Store, Runner, "work:missing", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Not_Found, "missing published work is explicit");
+      Persist_Boundary ("wrong-state", Quality_Manager.Model.Planning, "candidate-source");
+      Quality_Manager.Dispatch.Queue_Persisted (Store, Runner, "work:wrong-state", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Not_Ready, "nonpublished work is not queueable");
+      Persist_Boundary ("missing-source", Quality_Manager.Model.Published, "");
+      Quality_Manager.Dispatch.Queue_Persisted (Store, Runner, "work:missing-source", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Stale_Evidence, "missing planned source blocks queueing");
+      declare
+         Work : constant Quality_Manager.Storage.Schema.Work_Item :=
+           Boundary_Work ("missing-mapping", Quality_Manager.Model.Published, "candidate-source");
+      begin
+         Quality_Manager.Storage.Records.Save (Store, Work, Result);
+         Quality_Manager.Dispatch.Queue_Persisted (Store, Runner, "work:missing-mapping", Result);
+         Assert (Result.Kind = Quality_Manager.Results.Not_Found, "missing publication mapping blocks queueing");
+      end;
+      Persist_Boundary
+        ("mapping-drift", Quality_Manager.Model.Published, "candidate-source",
+         Mapping_Work => "work:different");
+      Quality_Manager.Dispatch.Queue_Persisted (Store, Runner, "work:mapping-drift", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Integrity_Error, "publication mapping drift is rejected");
+      Persist_Boundary
+        ("native-task-drift", Quality_Manager.Model.Published, "candidate-source", "TASK-OTHER");
+      Quality_Manager.Dispatch.Queue_Persisted (Store, Runner, "work:native-task-drift", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Integrity_Error, "native task drift is rejected");
+      Persist_Boundary ("source-drift", Quality_Manager.Model.Published, "different-source");
+      Quality_Manager.Dispatch.Queue_Persisted (Store, Runner, "work:source-drift", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Stale_Evidence, "native source drift is rejected");
+
+      Quality_Manager.Dispatch.Execute_Persisted
+        (Store, Runner, "", "owner", 10, 20, 60, Snapshot, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "empty persisted execution identity is rejected");
+      Quality_Manager.Dispatch.Execute_Persisted
+        (Store, Runner, "work:wrong-state", "owner", 10, 20, 60, Snapshot, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Not_Ready, "nonqueued work cannot execute");
+      declare
+         Work : constant Quality_Manager.Storage.Schema.Work_Item :=
+           Boundary_Work ("execute-missing-source", Quality_Manager.Model.Queued, "");
+      begin
+         Quality_Manager.Storage.Records.Save (Store, Work, Result);
+         Quality_Manager.Dispatch.Execute_Persisted
+           (Store, Runner, "work:execute-missing-source", "owner", 10, 20, 60, Snapshot, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Stale_Evidence,
+                 "queued work without assessed source cannot execute");
+      end;
+      Persist_Boundary ("execute-map-drift", Quality_Manager.Model.Queued, "candidate-source",
+                        Mapping_Work => "work:different");
+      Quality_Manager.Dispatch.Execute_Persisted
+        (Store, Runner, "work:execute-map-drift", "owner", 10, 20, 60, Snapshot, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+              "persisted execution rejects publication mapping drift");
+      Persist_Boundary
+        ("execute-task-drift", Quality_Manager.Model.Queued, "candidate-source", "TASK-OTHER");
+      Quality_Manager.Dispatch.Execute_Persisted
+        (Store, Runner, "work:execute-task-drift", "owner", 10, 20, 60, Snapshot, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+              "persisted execution rejects native task drift");
+      Persist_Boundary ("execute-source-drift", Quality_Manager.Model.Queued, "different-source");
+      Quality_Manager.Dispatch.Execute_Persisted
+        (Store, Runner, "work:execute-source-drift", "owner", 10, 20, 60, Snapshot, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Stale_Evidence,
+              "persisted execution rejects native source drift");
+      declare
+         procedure Exercise_Execution_Outcome
+           (Name           : String;
+            Path_Value     : String;
+            Expected       : Quality_Manager.Results.Result_Kind;
+            Expected_State : Quality_Manager.Model.Work_State) is
+            Work : Quality_Manager.Storage.Schema.Work_Item :=
+              Boundary_Work (Name, Quality_Manager.Model.Queued, "candidate-source");
+            Published : constant Quality_Manager.Storage.Schema.Dispatch :=
+              Boundary_Mapping (Name, "work:" & Name);
+            Loaded_Work : Quality_Manager.Storage.Schema.Work_Item;
+         begin
+            Work.Project.Canonical_Path := To_Unbounded_String (Path_Value);
+            Quality_Manager.Storage.Records.Save (Store, Work, Result);
+            Quality_Manager.Storage.Records.Save (Store, Published, Result);
+            Quality_Manager.Dispatch.Execute_Persisted
+              (Store, Runner, "work:" & Name, "owner", 10, 100, 60, Snapshot, Result);
+            Assert (Result.Kind = Expected, "persisted execution classifies " & Name);
+            Quality_Manager.Storage.Decoding.Read_Work (Store, "work:" & Name, Loaded_Work, Result);
+            Assert
+              (Result.Kind = Quality_Manager.Results.Success and then Loaded_Work.State = Expected_State,
+               "persisted execution records the coordinator state for " & Name);
+         end Exercise_Execution_Outcome;
+      begin
+         Exercise_Execution_Outcome
+           ("cancelled-outcome", "/cancelled", Quality_Manager.Results.Interrupted,
+            Quality_Manager.Model.Cancelled);
+         Exercise_Execution_Outcome
+           ("failed-outcome", "/failed", Quality_Manager.Results.Negative_Result,
+            Quality_Manager.Model.Failed);
+         Exercise_Execution_Outcome
+           ("integrated-outcome", "/integrated", Quality_Manager.Results.Success,
+            Quality_Manager.Model.Awaiting_Assessment);
+         Exercise_Execution_Outcome
+           ("invalid-outcome", "/invalid-state", Quality_Manager.Results.Incompatible_Contract,
+            Quality_Manager.Model.Executing);
+         Exercise_Execution_Outcome
+           ("missing-identity-outcome", "/missing-identity",
+            Quality_Manager.Results.Incompatible_Contract, Quality_Manager.Model.Queued);
+      end;
+      declare
+         Work : Quality_Manager.Storage.Schema.Work_Item :=
+           Boundary_Work ("blocked-native", Quality_Manager.Model.Published, "candidate-source");
+         Published : constant Quality_Manager.Storage.Schema.Dispatch :=
+           Boundary_Mapping ("blocked-native", "work:blocked-native");
+      begin
+         Work.Project.Canonical_Path := To_Unbounded_String ("/blocked");
+         Quality_Manager.Storage.Records.Save (Store, Work, Result);
+         Quality_Manager.Storage.Records.Save (Store, Published, Result);
+         Quality_Manager.Dispatch.Queue_Persisted (Store, Runner, "work:blocked-native", Result);
+         Assert (Result.Kind = Quality_Manager.Results.Not_Ready,
+                 "native readiness blocks queueing before an agent starts");
+      end;
+
+      Quality_Manager.Dispatch.Integrate_Persisted
+        (Store, Runner, "", "owner", 10, 20, Snapshot, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Invalid_Request,
+              "empty persisted integration identity is rejected");
+      Quality_Manager.Dispatch.Integrate_Persisted
+        (Store, Runner, "work:wrong-state", "owner", 10, 20, Snapshot, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Not_Ready,
+              "work not awaiting integration cannot be integrated");
+      declare
+         Work : constant Quality_Manager.Storage.Schema.Work_Item :=
+           Boundary_Work ("integrate-missing-map", Quality_Manager.Model.Awaiting_Integration,
+                          "candidate-source");
+      begin
+         Quality_Manager.Storage.Records.Save (Store, Work, Result);
+         Quality_Manager.Dispatch.Integrate_Persisted
+           (Store, Runner, "work:integrate-missing-map", "owner", 10, 20, Snapshot, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Not_Found,
+                 "integration requires an active publication mapping");
+      end;
+      Persist_Boundary
+        ("integrate-map-drift", Quality_Manager.Model.Awaiting_Integration, "candidate-source",
+         Mapping_Work => "work:different");
+      Quality_Manager.Dispatch.Integrate_Persisted
+        (Store, Runner, "work:integrate-map-drift", "owner", 10, 20, Snapshot, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+              "integration rejects publication mapping drift");
+      Persist_Boundary
+        ("integrate-task-drift", Quality_Manager.Model.Awaiting_Integration, "candidate-source", "TASK-OTHER");
+      Quality_Manager.Dispatch.Integrate_Persisted
+        (Store, Runner, "work:integrate-task-drift", "owner", 10, 20, Snapshot, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+              "integration rejects execution task drift");
+      Persist_Boundary
+        ("integrate-source-drift", Quality_Manager.Model.Awaiting_Integration, "different-source");
+      Quality_Manager.Dispatch.Integrate_Persisted
+        (Store, Runner, "work:integrate-source-drift", "owner", 10, 20, Snapshot, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Stale_Evidence,
+              "integration rejects execution source drift");
 
       Quality_Manager.Dispatch.Execute_Or_Reconcile
         (Store, Runner, 0, "", "", "", 0, 1, 100, Request, Snapshot, Result);
@@ -2213,6 +2683,68 @@ package body Quality_Manager_Test_Suite is
       end;
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
+
+      declare
+         procedure Exercise_Failure
+           (Name     : String;
+            Expected : Quality_Manager.Results.Result_Kind) is
+            Scenario_Path : constant String := "/tmp/quality-manager-maintenance-" & Name & ".database";
+            Scenario_Store : aliased Quality_Manager.Storage.Store;
+            Scenario_Scheduler : aliased Quality_Manager.Scheduler.Scheduler_Type;
+            Scenario_Quality : Quality_Manager.Integrations.Quality.Adapter;
+            Scenario_Planner : Quality_Manager.Integrations.Improve.Adapter;
+            Scenario_Runner : Quality_Manager.Integrations.Runner.Adapter;
+            Scenario_Context : Quality_Manager.Maintenance.Context;
+            Scenario_Result : Quality_Manager.Results.Operation_Result;
+         begin
+            if Ada.Directories.Exists (Scenario_Path) then
+               Ada.Directories.Delete_File (Scenario_Path);
+            end if;
+            Quality_Manager.Storage.Open (Scenario_Store, Scenario_Path, True, Scenario_Result);
+            Assert (Scenario_Result.Kind = Quality_Manager.Results.Success,
+                    "maintenance failure store opens: " & Name);
+            Quality_Manager.Scheduler.Initialize (Scenario_Scheduler);
+            Quality_Manager.Scheduler.Configure
+              (Scenario_Scheduler, Scenario_Store'Unchecked_Access, 1, 1);
+            Quality_Manager.Integrations.Quality.Initialize
+              (Scenario_Quality, "./bin/qm_adapter_fixture", Name & "-quality.db");
+            Quality_Manager.Integrations.Improve.Initialize
+              (Scenario_Planner, "./bin/qm_adapter_fixture", "improve.toml",
+               Name & "-quality.db", "improve.db");
+            Quality_Manager.Integrations.Runner.Initialize
+              (Scenario_Runner, "./bin/qm_adapter_fixture");
+            Quality_Manager.Maintenance.Initialize
+              (Scenario_Context, Scenario_Store'Unchecked_Access,
+               Scenario_Scheduler'Unchecked_Access, Scenario_Quality, Scenario_Planner,
+               Scenario_Runner, 60);
+            Quality_Manager.Maintenance.Run_Cycle
+              (Scenario_Context, "7", False, Scenario_Result);
+            Assert
+              (Scenario_Result.Kind = Expected,
+               "maintenance failure is classified for " & Name & ": " &
+                 Quality_Manager.Results.Result_Kind'Image (Scenario_Result.Kind) & " " &
+                 Quality_Manager.Results.Message (Scenario_Result));
+            Quality_Manager.Scheduler.Shutdown (Scenario_Scheduler);
+            Quality_Manager.Storage.Close (Scenario_Store, Scenario_Result);
+            if Ada.Directories.Exists (Scenario_Path) then
+               Ada.Directories.Delete_File (Scenario_Path);
+            end if;
+         exception
+            when others =>
+               Quality_Manager.Scheduler.Shutdown (Scenario_Scheduler);
+               Quality_Manager.Storage.Close (Scenario_Store, Scenario_Result);
+               if Ada.Directories.Exists (Scenario_Path) then
+                  Ada.Directories.Delete_File (Scenario_Path);
+               end if;
+               raise;
+         end Exercise_Failure;
+      begin
+         Exercise_Failure ("inventory-invalid", Quality_Manager.Results.Invalid_Request);
+         Exercise_Failure ("inventory-schema", Quality_Manager.Results.Incompatible_Contract);
+         Exercise_Failure ("inventory-project", Quality_Manager.Results.Incompatible_Contract);
+         Exercise_Failure ("plan-invalid", Quality_Manager.Results.Success);
+         Exercise_Failure ("assessment-invalid", Quality_Manager.Results.Success);
+      end;
    exception
       when others =>
          Quality_Manager.Storage.Close (Store, Result);
@@ -2815,6 +3347,64 @@ package body Quality_Manager_Test_Suite is
               (Quality_Manager.Journal.Aborted),
             "intent-mismatched assessment journal preserves a terminal rejection");
       end;
+
+      declare
+         procedure Exercise_Recovery_State
+           (Name           : String;
+            Initial_State  : Quality_Manager.Model.Work_State;
+            Run            : Positive;
+            Expected_State : Quality_Manager.Model.Work_State) is
+            Recovered : Quality_Manager.Storage.Schema.Work_Item := Work;
+            Work_Id   : constant String := "work:recovery-" & Name;
+            Operation : constant Quality_Manager.Identities.Operation_Id :=
+              Quality_Manager.Identities.Operation_Identity ("maintenance-assessment", Work_Id);
+            Intent : constant String := Quality_Manager.Identities.Canonical_Digest
+              ([Quality_Manager.Identities.Text_Value ("authoritative-assessment-v1"),
+                Quality_Manager.Identities.Text_Value (Work_Id),
+                Quality_Manager.Identities.Text_Value (To_String (Project.Quality_Database_Id)),
+                Quality_Manager.Identities.Number_Value
+                  (Interfaces.Unsigned_64 (Project.Quality_Project_Id)),
+                Quality_Manager.Identities.Text_Value (To_String (Project.Canonical_Path)),
+                Quality_Manager.Identities.Text_Value ("7"),
+                Quality_Manager.Identities.Text_Value ("candidate-source"),
+                Quality_Manager.Identities.Text_Value ("policy"),
+                Quality_Manager.Identities.Text_Value ("toolchain"),
+                Quality_Manager.Identities.Text_Value ("")]);
+         begin
+            Recovered.Work_Id := To_Unbounded_String (Work_Id);
+            Recovered.Global_Remediation := To_Unbounded_String ("assessment:recovery-" & Name);
+            Recovered.Finding_Identities := To_Unbounded_String ("__assessment__");
+            Recovered.Improve_Plan_Id := Null_Unbounded_String;
+            Recovered.Improve_Revision := 0;
+            Recovered.Improve_Task_Id := Null_Unbounded_String;
+            Recovered.State := Initial_State;
+            Recovered.Outcome := Quality_Manager.Model.Evidence_Unavailable;
+            Quality_Manager.Storage.Records.Save (Store, Recovered, Result);
+            Assert (Result.Kind = Quality_Manager.Results.Success, "recovery state work persisted: " & Name);
+            Quality_Manager.Storage.Prepare_Operation
+              (Store, Operation, "authoritative-assessment", Intent, "assessment:pending", Result);
+            Quality_Manager.Storage.Advance_Operation
+              (Store, Operation, Quality_Manager.Journal.Prepared, Quality_Manager.Journal.Invoking,
+               "assessment:pending", "", Result);
+            Quality_Manager.Recovery.Reconcile_Assessment (Store, Quality, Operation, Run, Result);
+            Assert (Result.Kind = Quality_Manager.Results.Success, "recovery state reconciled: " & Name);
+            Quality_Manager.Storage.Read (Store, Work_Id, Loaded, Result);
+            Assert
+              (Result.Kind = Quality_Manager.Results.Success
+               and then To_String (Loaded.State) = Quality_Manager.Model.Work_State'Image (Expected_State),
+               "recovery state reaches its evidence-derived outcome: " & Name);
+         end Exercise_Recovery_State;
+      begin
+         Exercise_Recovery_State
+           ("incomplete-intervention", Quality_Manager.Model.Needs_Intervention, 3,
+            Quality_Manager.Model.Inconclusive);
+         Exercise_Recovery_State
+           ("incomplete-executing", Quality_Manager.Model.Executing, 3,
+            Quality_Manager.Model.Inconclusive);
+         Exercise_Recovery_State
+           ("complete-executing", Quality_Manager.Model.Executing, 2,
+            Quality_Manager.Model.Verified);
+      end;
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
@@ -3056,6 +3646,27 @@ package body Quality_Manager_Test_Suite is
         (Store, Quality_Manager.Storage.Cycle_Record, Values, 10, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success and then Natural (Values.Length) = 3,
               "each selected project has independent durable cycle state");
+      declare
+         Completed : Natural := 0;
+         Planned   : Natural := 0;
+      begin
+         for Value of Values loop
+            if To_String (Value.State) = Quality_Manager.Model.Work_State'Image
+              (Quality_Manager.Model.Verified)
+              and then Value.Terminal
+            then
+               Completed := Completed + 1;
+            elsif To_String (Value.State) = Quality_Manager.Model.Work_State'Image
+              (Quality_Manager.Model.Discovered)
+              and then not Value.Terminal
+            then
+               Planned := Planned + 1;
+            end if;
+         end loop;
+         Assert
+           (Completed = 2 and then Planned = 1,
+            "completed project passes close their cycles while disabled dry-run work remains planned");
+      end;
       Quality_Manager.Storage.List
         (Store, Quality_Manager.Storage.Work_Item_Record, Values, 10, Result);
       declare
@@ -3204,6 +3815,7 @@ package body Quality_Manager_Test_Suite is
       Path    : constant String := "/tmp/quality-manager-campaign.database";
       Store   : aliased Quality_Manager.Storage.Store;
       Context : Quality_Manager.Campaigns.Context;
+      Summary : Quality_Manager.Integrations.Summary.Adapter;
       Result  : Quality_Manager.Results.Operation_Result;
       Values  : Quality_Manager.Storage.Entity_Vectors.Vector;
       Loaded  : Quality_Manager.Storage.Stored_Entity;
@@ -3461,6 +4073,21 @@ package body Quality_Manager_Test_Suite is
       Assert (Result.Kind = Quality_Manager.Results.Success,
               "justified allowed not-applicable evidence satisfies its target");
 
+      Write_Text (Definition ("summary-reconcile", 1, 2));
+      Quality_Manager.Campaigns.Create (Context, Base_Path, Result);
+      Quality_Manager.Campaigns.Start (Context, "summary-reconcile", Result);
+      Quality_Manager.Integrations.Summary.Initialize
+        (Summary, "./bin/qm_adapter_fixture", "quality.db");
+      Quality_Manager.Campaigns.Reconcile (Context, Summary, "summary-reconcile", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success,
+              "campaign reconciliation adopts current versioned Summary evidence");
+      Quality_Manager.Storage.Read (Store, "campaign:summary-reconcile", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Loaded.State) = Quality_Manager.Model.Work_State'Image
+           (Quality_Manager.Model.Verified),
+         "current passing Summary evidence completes every frozen campaign target");
+
       declare
          Original_Directory : constant String := Ada.Directories.Current_Directory;
          Wrapper_Root       : constant String := "/tmp/quality-manager-wrapper-cwd";
@@ -3503,6 +4130,8 @@ package body Quality_Manager_Test_Suite is
            (File, "[coordinator]" & ASCII.LF & "database = """ & Wrapper_Database & """" & ASCII.LF
             & "[quality]" & ASCII.LF & "database = ""quality.db""" & ASCII.LF
             & "[integrations]" & ASCII.LF & "ada_quality = """
+            & Original_Directory & "/bin/qm_adapter_fixture""" & ASCII.LF
+            & "ada_quality_summary = """
             & Original_Directory & "/bin/qm_adapter_fixture""" & ASCII.LF);
          Ada.Text_IO.Close (File);
          Quality_Manager.Storage.Open (Wrapper_Store, Wrapper_Database, True, Wrapper_Result);

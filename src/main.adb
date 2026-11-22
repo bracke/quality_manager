@@ -12,6 +12,7 @@ with Quality_Manager.Identities;
 with Quality_Manager.Integrations.JSON_CLI;
 with Quality_Manager.Integrations.Quality;
 with Quality_Manager.Integrations.Runner;
+with Quality_Manager.Integrations.Summary;
 with Quality_Manager.Maintenance;
 with Quality_Manager.Recovery;
 with Quality_Manager.Releases;
@@ -49,6 +50,7 @@ procedure Main is
    procedure Run_Campaign_Command is
       Store        : aliased Quality_Manager.Storage.Store;
       Context      : Quality_Manager.Campaigns.Context;
+      Summary      : Quality_Manager.Integrations.Summary.Adapter;
       Close_Result : Quality_Manager.Results.Operation_Result;
    begin
       Quality_Manager.Config.Load
@@ -59,6 +61,9 @@ procedure Main is
       end if;
       if Result.Kind = Quality_Manager.Results.Success then
          Quality_Manager.Campaigns.Initialize (Context, Store'Unchecked_Access);
+         Quality_Manager.Integrations.Summary.Initialize
+           (Summary, To_String (Settings.Ada_Quality_Summary_Executable),
+            To_String (Settings.Quality_Database));
          case Options.Command is
             when Quality_Manager.CLI.Campaign_Create_Command =>
                Quality_Manager.Campaigns.Create
@@ -74,7 +79,7 @@ procedure Main is
                  (Context, To_String (Options.Primary_Value), Result);
             when Quality_Manager.CLI.Campaign_Reconcile_Command =>
                Quality_Manager.Campaigns.Reconcile
-                 (Context, To_String (Options.Primary_Value), Result);
+                 (Context, Summary, To_String (Options.Primary_Value), Result);
             when others =>
                Result := Quality_Manager.Results.Make_Result
                  (Quality_Manager.Results.Invalid_Request,

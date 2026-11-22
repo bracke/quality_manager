@@ -63,7 +63,7 @@ package body Quality_Manager.Storage.Records is
          Terminal => Quality_Manager.Transitions.Is_Terminal (Value.State),
          Generation => 1);
    begin
-      Quality_Manager.Storage.Put (Item, Entity, Result);
+      Quality_Manager.Storage.Put_Current (Item, Entity, Result);
    end Save;
 
    procedure Save

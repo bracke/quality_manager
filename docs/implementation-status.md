@@ -248,35 +248,34 @@ Operational views are read-only and fail if the coordinator database is absent o
 records bind the qualified project, exact Improve revision and content digest, policy digest, action, approver, and
 lifetime. Rejections are append-only audit events and cannot remove or rewrite an earlier approval.
 
-Gate: **passed**. The 24-test suite exercises all command routes, output formats, decision imports, recovery views,
+Gate: **passed**. The 25-test suite exercises all command routes, output formats, decision imports, recovery views,
 configuration propagation, and failure exits. Warnings-as-errors, forced validation, and GNATdoc passed.
 
 ## Phase 11 — Full release stabilization
 
 | Task | State | Evidence |
 | --- | --- | --- |
-| P11-01 complete AUnit suites | complete | 24/24 tests pass, including executable CLI acceptance |
-| P11-02 90% production coverage | complete | 4,451/4,940 body lines, 90.0996% |
+| P11-01 complete AUnit suites | complete | 25/25 tests pass, including executable CLI acceptance |
+| P11-02 90% production coverage | blocked | 6,201/7,096 production body lines, 87.3873%; full implemented scope is measured |
 | P11-03 applicable GNATprove | complete | Journal state machine SPARK flow/proof passes |
 | P11-04 GNATdoc | complete | project documentation generation succeeds |
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
-| P11-06 real maintenance scenario | partial | six-project cycle captured; environment repairs still required |
-| P11-07 real campaign scenario | pending release environment | requires current baselines and authorization records |
-| P11-08 real release scenario | pending release environment | requires exact candidate evidence and model credentials |
-| P11-09 crash/concurrency stress | partial | assessment/check replay, current-record idempotency, fencing, and process tests pass; full soak remains |
-| P11-10 packaging/docs/CI | partial | manifests, manpage, schemas, catalog, checklist present; final release archive remains |
+| P11-06 real maintenance scenario | complete | assessments 19–24 cover all six projects; each cycle has a terminal coordination event |
+| P11-07 real campaign scenario | complete | `phase11-structure-20261122` advanced STR-01 from baseline 19 to passing assessment 25 |
+| P11-08 real release scenario | blocked | assessment 26 found 11 violations and one unknown result; no evidence bundle was issued |
+| P11-09 crash/concurrency stress | complete | abrupt termination recovery, ownership contention, stale fencing, and 128 lease cycles pass |
+| P11-10 packaging/docs/CI | implemented | source-only manifest passes; pinned Linux CI validates and creates a source archive |
 
 The stabilization work fixes explicit configuration propagation for maintenance, campaigns, and release export,
 uses the recovery state machine in operational reporting, and tests release evidence corruption, process failures,
 native replay, policy drift, campaign contract errors, and scheduler resource accounting. `quality-manager doctor`
-negotiates the pinned model_runner headless contract successfully. Release status remains **blocked** until P11-06
-through P11-10 are completed with archived real-system evidence; fixture-backed acceptance tests do not replace those
-records.
+negotiates the pinned model_runner headless contract successfully. Release status remains **blocked** by the measured
+coverage shortfall and the real candidate's quality failures; fixture-backed tests do not replace either gate.
 
 Ada Quality `81b414f` adds a tested migration for the early schema-3 measurement semantics and finding identities.
-The live database passed migration and integrity checks with its durable identity preserved, and now contains the six
-projects selected for release-environment validation. P11-06 through P11-10 still require archived real workflow
-records; successful inventory migration alone does not satisfy those gates.
+The live database passed migration and integrity checks with its durable identity preserved, and contains the six
+projects selected for release-environment validation. Successful inventory migration alone does not satisfy a
+workflow or release gate.
 
 On 22 November 2026, a live maintenance worker assessed `quality_manager` and Ada Quality persisted assessment 2.
 The run completed with 85 findings but incomplete evidence because coverage and the release checker were unavailable
@@ -367,3 +366,19 @@ verification for the exact plan revision, task, and new assessment. The append-o
 quality, regression, policy, toolchain, and contract evidence. Only the full independent predicate advances work to
 `Verified`; negative outcomes retain their bounded retry or intervention state. The fixture-backed maintenance test now
 executes the complete approval → publication → agent → integration → reassessment → verification loop.
+
+The final six-project maintenance execution produced assessments 19 through 24. Five assessments completed and the
+model_runner assessment was invalid; the coordinator preserved each independent `Verified`, `Inconclusive`, or
+intervention outcome and atomically closed all six cycle records. `Verified` on a cycle means that coordination
+finished, not that the project is healthy; its completion event retains the associated work state.
+
+The real campaign `phase11-structure-20261122` froze project 1 at assessment 19 and required STR-01 to pass. Fresh
+assessment 25 supplied current evidence, and Summary reconciliation advanced the campaign to `Verified`. The exact
+release candidate `27d1550a00258e7ed7c5bb319c4cf2ab520182068dfc7680fa27a02d99f080c2` then produced assessment
+26. It was correctly blocked with 11 violations and unknown TST-03 evidence, so qualification issued no bundle.
+
+Coordinator ownership now uses an expiry-aware durable lease with fencing generations and renewal before external
+work. The suite kills a helper process without finalization, reopens its database, reconstructs the prepared journal
+intent, rejects a competing opener, verifies expired-owner takeover, and completes 128 acquire/release cycles. The
+full production measurement is 6,201/7,096 lines (87.3873%), so the 90% gate remains open instead of carrying forward
+the earlier partial-scope result.
