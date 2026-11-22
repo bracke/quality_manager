@@ -237,3 +237,28 @@ validation, and GNATdoc passed.
 Operational views are read-only and fail if the coordinator database is absent or incompatible. Authorization
 records bind the qualified project, exact Improve revision and content digest, policy digest, action, approver, and
 lifetime. Rejections are append-only audit events and cannot remove or rewrite an earlier approval.
+
+Gate: **passed**. The 24-test suite exercises all command routes, output formats, decision imports, recovery views,
+configuration propagation, and failure exits. Warnings-as-errors, forced validation, and GNATdoc passed.
+
+## Phase 11 — Full release stabilization
+
+| Task | State | Evidence |
+| --- | --- | --- |
+| P11-01 complete AUnit suites | complete | 24/24 tests pass, including executable CLI acceptance |
+| P11-02 90% production coverage | complete | 4,283/4,758 body lines, 90.0160% |
+| P11-03 applicable GNATprove | complete | Journal state machine SPARK flow/proof passes |
+| P11-04 GNATdoc | complete | project documentation generation succeeds |
+| P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
+| P11-06 real maintenance scenario | pending release environment | requires configured multi-project quality inventory |
+| P11-07 real campaign scenario | pending release environment | requires current baselines and authorization records |
+| P11-08 real release scenario | pending release environment | requires exact candidate evidence and model credentials |
+| P11-09 crash/concurrency stress | partial | journal boundaries, restart replay, fencing, and process tests pass; release soak remains |
+| P11-10 packaging/docs/CI | partial | manifests, manpage, schemas, catalog, checklist present; final release archive remains |
+
+The stabilization work fixes explicit configuration propagation for maintenance, campaigns, and release export,
+uses the recovery state machine in operational reporting, and tests release evidence corruption, process failures,
+native replay, policy drift, campaign contract errors, and scheduler resource accounting. `quality-manager doctor`
+negotiates the pinned model_runner headless contract successfully. Release status remains **blocked** until P11-06
+through P11-10 are completed with archived real-system evidence; fixture-backed acceptance tests do not replace those
+records.

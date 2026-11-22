@@ -119,30 +119,51 @@ begin
                   Operation : constant String :=
                     (if Ada.Strings.Fixed.Index (Text, "qm-execution-2") > 0 then "qm-execution-2"
                      elsif Ada.Strings.Fixed.Index (Text, "qm-execution-3") > 0 then "qm-execution-3"
+                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-4") > 0 then "qm-execution-4"
+                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-5") > 0 then "qm-execution-5"
+                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-6") > 0 then "qm-execution-6"
+                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-7") > 0 then "qm-execution-7"
+                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-8") > 0 then "qm-execution-8"
+                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-9") > 0 then "qm-execution-9"
                      else "qm-execution-1");
                   Is_Execute : constant Boolean := Ada.Strings.Fixed.Index (Text, "work execute ") = 1;
                   Is_Integrate : constant Boolean := Ada.Strings.Fixed.Index (Text, "work integrate ") = 1;
-                  Running : constant Boolean := Operation = "qm-execution-2" and then Is_Execute;
+                  Running : constant Boolean :=
+                    Operation in "qm-execution-2" | "qm-execution-6" | "qm-execution-7"
+                    and then Is_Execute;
                   Incompatible : constant Boolean := Operation = "qm-execution-3";
+                  Cancelled : constant Boolean := Operation = "qm-execution-4";
+                  Failed : constant Boolean := Operation = "qm-execution-5";
+                  Pending_Integration : constant Boolean :=
+                    Operation = "qm-execution-8" and then Is_Integrate;
                   Audit : constant String := (if Is_Execute then "execute-audit" else "status-audit");
                begin
                   Ada.Text_IO.Put
                     ("{""schema_version"":1,""kind"":""work-operation""," &
                      """operation_id"":""" & Operation & """,""project_identity"":""project-identity""," &
                      """source_fingerprint"":""" &
-                     (if Is_Integrate then "integrated-source" else "source-fingerprint") &
+                     (if Is_Integrate and then not Pending_Integration
+                      then "integrated-source" else "source-fingerprint") &
                      """,""task_id"":""TASK-001""," &
                      """task_revision"":""task-revision"",""effective_task_revision"":""effective-revision""," &
                      """execution_policy"":""policy-fingerprint"",""execution_generation"":""1""," &
                      """execution_state"":""" &
                      (if Incompatible then "incompatible"
+                      elsif Cancelled then "cancelled"
+                      elsif Failed then "failed"
                       elsif Running then "executing"
-                      elsif Is_Integrate then "completed" else "awaiting_integration") &
-                     """,""native_task_state"":""" & (if Running then "running" else "verification") &
-                     """,""core_state"":""" & (if Running then "running" else "verification") &
+                      elsif Is_Integrate and then not Pending_Integration
+                      then "completed" else "awaiting_integration") &
+                     """,""native_task_state"":""" &
+                     (if Running then "running" elsif Failed then "failed"
+                      elsif Cancelled then "cancelled" else "verification") &
+                     """,""core_state"":""" &
+                     (if Running then "running" elsif Failed then "failed"
+                      elsif Cancelled then "cancelled" else "verification") &
                      """,""ready"":false,""readiness_reasons"":[]," &
                      """workspace_id"":""" & (if Is_Integrate then "" else "workspace-1") &
-                     """,""workspace_state"":""" & (if Is_Integrate then "integrated" else "active") &
+                     """,""workspace_state"":""" &
+                     (if Is_Integrate and then not Pending_Integration then "integrated" else "active") &
                      """," &
                      """result"":""success"",""diagnostics"":[],""audit_reference"":""" & Audit & """," &
                      """invocation"":""" & To_String (Invocation) & """}");
@@ -211,7 +232,8 @@ begin
             & ",""command"":""" & To_String (Command) & """"
             & ",""report_type"":""" & To_String (Command) & """"
             & ",""kind"":""" & To_String (Kind) & """"
-            & (if Is_Database_Statistics and then To_String (Database_Path) = "quality.db"
+            & (if Is_Database_Statistics
+               and then Ada.Strings.Fixed.Index (To_String (Database_Path), "quality.db") > 0
                then ",""database_identity"":""123e4567-e89b-12d3-a456-426614174000"""
                elsif Is_Database_Statistics and then To_String (Database_Path) = "invalid-identity.db"
                then ",""database_identity"":""not-a-uuid"""

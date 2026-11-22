@@ -1,6 +1,8 @@
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Strings.Fixed;
 with Jsonlib.Serializers;
+with Quality_Manager.Journal;
+with Quality_Manager.Recovery;
 
 package body Quality_Manager.Reporting is
    use type Quality_Manager.Results.Result_Kind;
@@ -43,6 +45,7 @@ package body Quality_Manager.Reporting is
       Values : Quality_Manager.Storage.Entity_Vectors.Vector;
       Text   : Unbounded_String;
       First  : Boolean := True;
+      Recovery_Work : Quality_Manager.Recovery.Recovery_Vectors.Vector;
 
       procedure Add (Kind : Quality_Manager.Storage.Record_Kind) is
       begin
@@ -78,7 +81,23 @@ package body Quality_Manager.Reporting is
          when Event_Stream =>
             Add (Quality_Manager.Storage.Event_Record);
          when Recovery_Status =>
-            Add (Quality_Manager.Storage.Journal_Record);
+            Quality_Manager.Recovery.Reconstruct
+              (Store, 100_000, Recovery_Work, Result);
+            if Result.Kind = Quality_Manager.Results.Success then
+               for Item of Recovery_Work loop
+                  Values.Append
+                    (Quality_Manager.Storage.Stored_Entity'
+                       (Internal_Id => 1,
+                      Kind        => Quality_Manager.Storage.Journal_Record,
+                      Entity_Key  => Item.Operation_Key,
+                      State       => To_Unbounded_String
+                        (Quality_Manager.Journal.Journal_State'Image (Item.State)),
+                      Payload     => To_Unbounded_String
+                        (Quality_Manager.Journal.Recovery_Action'Image (Item.Action)),
+                      Terminal    => False,
+                      Generation  => 1));
+               end loop;
+            end if;
       end case;
       if Result.Kind /= Quality_Manager.Results.Success then
          return "";
@@ -102,7 +121,10 @@ package body Quality_Manager.Reporting is
                   & ",""key"":" & JSON_String (To_String (Item.Entity_Key))
                   & ",""state"":" & JSON_String (To_String (Item.State))
                   & ",""terminal"":" & (if Item.Terminal then "true" else "false")
-                  & ",""generation"":" & Image (Natural (Item.Generation)) & "}");
+                  & ",""generation"":" & Image (Natural (Item.Generation))
+                  & (if View = Recovery_Status
+                     then ",""recovery_action"":" & JSON_String (To_String (Item.Payload))
+                     else "") & "}");
             end loop;
             Append (Text, "]}");
          when Quality_Manager.CLI.Terminal_Output =>
@@ -113,7 +135,8 @@ package body Quality_Manager.Reporting is
                Append
                  (Text, ASCII.LF & Kind_Name (Item.Kind) & "  "
                   & To_String (Item.Entity_Key) & "  " & To_String (Item.State)
-                  & (if Item.Terminal then "  terminal" else ""));
+                  & (if View = Recovery_Status then "  " & To_String (Item.Payload)
+                     elsif Item.Terminal then "  terminal" else ""));
             end loop;
          when Quality_Manager.CLI.Markdown_Output =>
             Append

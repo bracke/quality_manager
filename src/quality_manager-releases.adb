@@ -31,6 +31,23 @@ package body Quality_Manager.Releases is
 
    function B (Value : Boolean) return String is (if Value then "true" else "false");
 
+   function Trim_Output (Value : String) return String is
+      First : Natural := Value'First;
+      Last  : Natural := Value'Last;
+   begin
+      while First <= Last
+        and then Value (First) in ' ' | ASCII.HT | ASCII.LF | ASCII.CR
+      loop
+         First := First + 1;
+      end loop;
+      while Last >= First
+        and then Value (Last) in ' ' | ASCII.HT | ASCII.LF | ASCII.CR
+      loop
+         Last := Last - 1;
+      end loop;
+      return (if First > Last then "" else Value (First .. Last));
+   end Trim_Output;
+
    function JSON_Boolean (Document, Name : String) return Boolean is
       Prefix : constant String := Character'Val (34) & Name & Character'Val (34) & ":true";
    begin
@@ -66,8 +83,7 @@ package body Quality_Manager.Releases is
       elsif Process.Exit_Status /= 0 then
          Result := Make_Result (Negative_Result, "release command failed", "qm.release.process-exit");
       else
-         Output := To_Unbounded_String
-           (Ada.Strings.Fixed.Trim (To_String (Process.Standard_Output), Ada.Strings.Both));
+         Output := To_Unbounded_String (Trim_Output (To_String (Process.Standard_Output)));
          Result := Make_Result (Success);
       end if;
    end Execute_Simple;
@@ -269,6 +285,26 @@ package body Quality_Manager.Releases is
       Proof_Applicable      : Boolean;
       Checks                : out Check_Results;
       Result                : out Operation_Result) is
+   begin
+      Run_Local_Checks_With_Tools
+        (Item, Operation, Project_Path, Candidate_Commit, Source_Fingerprint,
+         Release_Config_Digest, Coverage_Basis_Points, Proof_Applicable,
+         "alr", "git", Checks, Result);
+   end Run_Local_Checks;
+
+   procedure Run_Local_Checks_With_Tools
+     (Item                  : in out Context;
+      Operation             : Quality_Manager.Identities.Operation_Id;
+      Project_Path          : String;
+      Candidate_Commit      : String;
+      Source_Fingerprint    : String;
+      Release_Config_Digest : String;
+      Coverage_Basis_Points : Natural;
+      Proof_Applicable      : Boolean;
+      Alire_Executable      : String;
+      Git_Executable        : String;
+      Checks                : out Check_Results;
+      Result                : out Operation_Result) is
       Key : constant String :=
         "release-checks:"
         & Ada.Strings.Fixed.Trim
@@ -299,7 +335,7 @@ package body Quality_Manager.Releases is
 
       procedure Run_Alire (Arguments : Quality_Manager.Integrations.Processes.String_Vectors.Vector) is
       begin
-         Execute_Simple ("alr", Arguments, Project_Path, Output, Command_Result);
+         Execute_Simple (Alire_Executable, Arguments, Project_Path, Output, Command_Result);
          if Command_Result.Kind not in Success | Negative_Result then
             Infrastructure_Failure := True;
          end if;
@@ -382,7 +418,7 @@ package body Quality_Manager.Releases is
 
       Args.Append (To_Unbounded_String ("rev-parse"));
       Args.Append (To_Unbounded_String ("HEAD"));
-      Execute_Simple ("git", Args, Project_Path, Commit, Command_Result);
+      Execute_Simple (Git_Executable, Args, Project_Path, Commit, Command_Result);
       if Command_Result.Kind not in Success | Negative_Result then Infrastructure_Failure := True; end if;
       Checks.Candidate_Commit := Commit;
       Checks.Source_Fingerprint := To_Unbounded_String (Source_Fingerprint);
@@ -442,7 +478,7 @@ package body Quality_Manager.Releases is
       elsif Result.Kind = Success and then not Checks.Release_Checks_Passed then
          Result := Make_Result (Negative_Result, "one or more local release checks failed", "qm.release.checks");
       end if;
-   end Run_Local_Checks;
+   end Run_Local_Checks_With_Tools;
 
    procedure Evaluate
      (Item       : in out Context;
@@ -617,6 +653,16 @@ package body Quality_Manager.Releases is
    end Export_Evidence;
 
    procedure Create (Project_Selector : String; Profile : String) is
+   begin
+      Create_Configured
+        (Project_Selector, Profile, "config/quality-manager.toml", False);
+   end Create;
+
+   procedure Create_Configured
+     (Project_Selector : String;
+      Profile          : String;
+      Config_Path      : String;
+      Config_Required  : Boolean) is
       Settings : Quality_Manager.Config.Settings;
       Store : aliased Quality_Manager.Storage.Store;
       Item : Context;
@@ -629,7 +675,7 @@ package body Quality_Manager.Releases is
       Args : Quality_Manager.Integrations.Processes.String_Vectors.Vector;
       Release_Id : Unbounded_String;
    begin
-      Quality_Manager.Config.Load ("config/quality-manager.toml", False, Settings, Result);
+      Quality_Manager.Config.Load (Config_Path, Config_Required, Settings, Result);
       if Result.Kind = Success then
          Quality_Manager.Storage.Open (Store, To_String (Settings.Coordinator_Database), True, Result);
       end if;
@@ -703,7 +749,7 @@ package body Quality_Manager.Releases is
       if Result.Kind /= Success then
          raise Release_Error with Message (Result);
       end if;
-   end Create;
+   end Create_Configured;
 
    procedure Qualify (Release_Id : String) is
       pragma Unreferenced (Release_Id);
@@ -713,12 +759,22 @@ package body Quality_Manager.Releases is
    end Qualify;
 
    procedure Export_Evidence (Release_Id : String; Output_Path : String) is
+   begin
+      Export_Evidence_Configured
+        (Release_Id, Output_Path, "config/quality-manager.toml", False);
+   end Export_Evidence;
+
+   procedure Export_Evidence_Configured
+     (Release_Id      : String;
+      Output_Path     : String;
+      Config_Path     : String;
+      Config_Required : Boolean) is
       Settings : Quality_Manager.Config.Settings;
       Store : aliased Quality_Manager.Storage.Store;
       Item : Context;
       Result, Close_Result : Operation_Result;
    begin
-      Quality_Manager.Config.Load ("config/quality-manager.toml", False, Settings, Result);
+      Quality_Manager.Config.Load (Config_Path, Config_Required, Settings, Result);
       if Result.Kind = Success then
          Quality_Manager.Storage.Open (Store, To_String (Settings.Coordinator_Database), True, Result);
       end if;
@@ -729,5 +785,5 @@ package body Quality_Manager.Releases is
       Quality_Manager.Storage.Close (Store, Close_Result);
       if Result.Kind = Success and then Close_Result.Kind /= Success then Result := Close_Result; end if;
       if Result.Kind /= Success then raise Release_Error with Message (Result); end if;
-   end Export_Evidence;
+   end Export_Evidence_Configured;
 end Quality_Manager.Releases;

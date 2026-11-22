@@ -1,0 +1,12 @@
+name = "quality_manager_release_fixture"
+description = "Small deterministic crate used by release-check acceptance tests"
+version = "0.1.0"
+licenses = "MIT"
+project-files = ["quality_manager_release_fixture.gpr"]
+executables = ["quality_manager_release_fixture"]
+
+[[depends-on]]
+gnat_native = "=15.2.1"
+
+[build-profiles]
+"*" = "development"

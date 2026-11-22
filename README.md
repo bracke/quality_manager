@@ -55,3 +55,10 @@ views in terminal, JSON, and Markdown formats. Administrative `approve` and
 `schemas/approval-decision-v1.schema.json`; the command and record decision must
 match. Campaign and release lifecycle commands are listed by `quality-manager
 help`. See `docs/quality-manager.1` for the operator reference.
+
+Phase 11 stabilization currently passes the 24-test AUnit suite, the
+warnings-as-errors validation build, applicable GNATprove analysis, GNATdoc,
+and 90.0160% measured production-line coverage. Final release status remains
+blocked until real multi-project maintenance, campaign, and exact-candidate
+qualification records are captured in the configured release environment; see
+`docs/release-checklist.md` and `docs/implementation-status.md`.

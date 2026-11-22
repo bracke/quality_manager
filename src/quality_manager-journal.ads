@@ -1,5 +1,5 @@
 package Quality_Manager.Journal
-  with Pure
+  with Pure, SPARK_Mode
 is
    type Journal_State is
      (Prepared, Invoking, Reconciling, Committed, Aborted, Needs_Intervention);

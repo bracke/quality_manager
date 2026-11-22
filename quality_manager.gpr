@@ -7,10 +7,16 @@ project Quality_Manager is
    type Boolean_Text is ("false", "true");
    Warnings_As_Errors : Boolean_Text :=
      external ("QUALITY_MANAGER_WARNINGS_AS_ERRORS", "false");
+   Coverage : Boolean_Text := external ("QUALITY_MANAGER_COVERAGE", "false");
    Warning_Switches := ();
+   Coverage_Switches := ();
    case Warnings_As_Errors is
       when "false" => null;
       when "true"  => Warning_Switches := ("-gnatwe");
+   end case;
+   case Coverage is
+      when "false" => null;
+      when "true"  => Coverage_Switches := ("-fprofile-arcs", "-ftest-coverage");
    end case;
 
    for Languages use ("Ada");
@@ -23,7 +29,7 @@ project Quality_Manager is
    package Compiler is
       for Default_Switches ("Ada") use
         ("-gnat2022", "-gnatyM120", "-gnata", "-gnatwa", "-gnatVa")
-        & Warning_Switches;
+        & Warning_Switches & Coverage_Switches;
    end Compiler;
 
    package Binder is
@@ -33,4 +39,12 @@ project Quality_Manager is
    package Builder is
       for Executable ("main.adb") use "quality-manager";
    end Builder;
+
+   package Linker is
+      case Coverage is
+         when "false" => null;
+         when "true"  =>
+            for Default_Switches ("Ada") use ("--coverage");
+      end case;
+   end Linker;
 end Quality_Manager;

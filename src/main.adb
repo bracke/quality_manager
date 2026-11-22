@@ -42,6 +42,51 @@ procedure Main is
          when Quality_Manager.CLI.Events_Command    => Quality_Manager.Reporting.Event_Stream,
          when Quality_Manager.CLI.Recover_Command   => Quality_Manager.Reporting.Recovery_Status,
          when others => raise Program_Error);
+
+   procedure Run_Campaign_Command is
+      Store        : aliased Quality_Manager.Storage.Store;
+      Context      : Quality_Manager.Campaigns.Context;
+      Close_Result : Quality_Manager.Results.Operation_Result;
+   begin
+      Quality_Manager.Config.Load
+        (To_String (Options.Config_Path), Options.Config_Explicit, Settings, Result);
+      if Result.Kind = Quality_Manager.Results.Success then
+         Quality_Manager.Storage.Open
+           (Store, To_String (Settings.Coordinator_Database), True, Result);
+      end if;
+      if Result.Kind = Quality_Manager.Results.Success then
+         Quality_Manager.Campaigns.Initialize (Context, Store'Unchecked_Access);
+         case Options.Command is
+            when Quality_Manager.CLI.Campaign_Create_Command =>
+               Quality_Manager.Campaigns.Create
+                 (Context, To_String (Options.Primary_Value), Result);
+            when Quality_Manager.CLI.Campaign_Start_Command =>
+               Quality_Manager.Campaigns.Start
+                 (Context, To_String (Options.Primary_Value), Result);
+            when Quality_Manager.CLI.Campaign_Pause_Command =>
+               Quality_Manager.Campaigns.Pause
+                 (Context, To_String (Options.Primary_Value), Result);
+            when Quality_Manager.CLI.Campaign_Resume_Command =>
+               Quality_Manager.Campaigns.Resume
+                 (Context, To_String (Options.Primary_Value), Result);
+            when Quality_Manager.CLI.Campaign_Reconcile_Command =>
+               Quality_Manager.Campaigns.Reconcile
+                 (Context, To_String (Options.Primary_Value), Result);
+            when others =>
+               Result := Quality_Manager.Results.Make_Result
+                 (Quality_Manager.Results.Invalid_Request,
+                  "invalid campaign command", "qm.cli.campaign-command");
+         end case;
+      end if;
+      if Quality_Manager.Storage.Is_Open (Store) then
+         Quality_Manager.Storage.Close (Store, Close_Result);
+         if Result.Kind = Quality_Manager.Results.Success
+           and then Close_Result.Kind /= Quality_Manager.Results.Success
+         then
+            Result := Close_Result;
+         end if;
+      end if;
+   end Run_Campaign_Command;
 begin
    for Index in 1 .. Ada.Command_Line.Argument_Count loop
       Arguments.Append (Ada.Command_Line.Argument (Index));
@@ -83,8 +128,9 @@ begin
          end;
       when Quality_Manager.CLI.Maintenance_Command =>
          begin
-            Quality_Manager.Maintenance.Run_Cycle
-              (To_String (Options.Project_Selector), Options.Dry_Run);
+            Quality_Manager.Maintenance.Run_Configured_Cycle
+              (To_String (Options.Project_Selector), Options.Dry_Run,
+               To_String (Options.Config_Path), Options.Config_Explicit);
          exception
             when Error : Quality_Manager.Maintenance.Maintenance_Error =>
                Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Ada.Exceptions.Exception_Message (Error));
@@ -93,8 +139,9 @@ begin
       when Quality_Manager.CLI.Daemon_Command =>
          loop
             begin
-               Quality_Manager.Maintenance.Run_Cycle
-                 (To_String (Options.Project_Selector), Options.Dry_Run);
+               Quality_Manager.Maintenance.Run_Configured_Cycle
+                 (To_String (Options.Project_Selector), Options.Dry_Run,
+                  To_String (Options.Config_Path), Options.Config_Explicit);
             exception
                when Error : Quality_Manager.Maintenance.Maintenance_Error =>
                   Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Ada.Exceptions.Exception_Message (Error));
@@ -147,39 +194,25 @@ begin
          | Quality_Manager.CLI.Campaign_Pause_Command
          | Quality_Manager.CLI.Campaign_Resume_Command
          | Quality_Manager.CLI.Campaign_Reconcile_Command =>
-         begin
-            case Options.Command is
-               when Quality_Manager.CLI.Campaign_Create_Command =>
-                  Quality_Manager.Campaigns.Create (To_String (Options.Primary_Value));
-               when Quality_Manager.CLI.Campaign_Start_Command =>
-                  Quality_Manager.Campaigns.Start (To_String (Options.Primary_Value));
-               when Quality_Manager.CLI.Campaign_Pause_Command =>
-                  Quality_Manager.Campaigns.Pause (To_String (Options.Primary_Value));
-               when Quality_Manager.CLI.Campaign_Resume_Command =>
-                  Quality_Manager.Campaigns.Resume (To_String (Options.Primary_Value));
-               when Quality_Manager.CLI.Campaign_Reconcile_Command =>
-                  Quality_Manager.Campaigns.Reconcile (To_String (Options.Primary_Value));
-               when others => null;
-            end case;
-         exception
-            when Error : Quality_Manager.Campaigns.Campaign_Error =>
-               Ada.Text_IO.Put_Line
-                 (Ada.Text_IO.Standard_Error, Ada.Exceptions.Exception_Message (Error));
-               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-         end;
+         Run_Campaign_Command;
+         if Result.Kind /= Quality_Manager.Results.Success then
+            Report_Failure;
+         end if;
       when Quality_Manager.CLI.Release_Create_Command
          | Quality_Manager.CLI.Release_Qualify_Command
          | Quality_Manager.CLI.Release_Export_Command =>
          begin
             case Options.Command is
                when Quality_Manager.CLI.Release_Create_Command =>
-                  Quality_Manager.Releases.Create
-                    (To_String (Options.Primary_Value), To_String (Options.Secondary_Value));
+                  Quality_Manager.Releases.Create_Configured
+                    (To_String (Options.Primary_Value), To_String (Options.Secondary_Value),
+                     To_String (Options.Config_Path), Options.Config_Explicit);
                when Quality_Manager.CLI.Release_Qualify_Command =>
                   Quality_Manager.Releases.Qualify (To_String (Options.Primary_Value));
                when Quality_Manager.CLI.Release_Export_Command =>
-                  Quality_Manager.Releases.Export_Evidence
-                    (To_String (Options.Primary_Value), To_String (Options.Secondary_Value));
+                  Quality_Manager.Releases.Export_Evidence_Configured
+                    (To_String (Options.Primary_Value), To_String (Options.Secondary_Value),
+                     To_String (Options.Config_Path), Options.Config_Explicit);
                when others => null;
             end case;
          exception

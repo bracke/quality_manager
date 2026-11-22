@@ -49,6 +49,12 @@ package Quality_Manager.Maintenance is
      (Project_Selector : String := "";
       Dry_Run          : Boolean := False);
 
+   procedure Run_Configured_Cycle
+     (Project_Selector : String;
+      Dry_Run          : Boolean;
+      Config_Path      : String;
+      Config_Required  : Boolean);
+
 private
    type Scheduler_Access is access all Quality_Manager.Scheduler.Scheduler_Type;
    type Context is limited record

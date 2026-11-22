@@ -2,6 +2,21 @@ with "../quality_manager.gpr";
 with "aunit";
 
 project Quality_Manager_Tests is
+   type Boolean_Text is ("false", "true");
+   Warnings_As_Errors : Boolean_Text :=
+     external ("QUALITY_MANAGER_WARNINGS_AS_ERRORS", "false");
+   Coverage : Boolean_Text := external ("QUALITY_MANAGER_COVERAGE", "false");
+   Warning_Switches := ();
+   Coverage_Switches := ();
+   case Warnings_As_Errors is
+      when "false" => null;
+      when "true"  => Warning_Switches := ("-gnatwe");
+   end case;
+   case Coverage is
+      when "false" => null;
+      when "true"  => Coverage_Switches := ("-fprofile-arcs", "-ftest-coverage");
+   end case;
+
    for Source_Dirs use ("src");
    for Object_Dir use "obj";
    for Exec_Dir use "bin";
@@ -10,10 +25,19 @@ project Quality_Manager_Tests is
 
    package Compiler is
       for Default_Switches ("Ada") use
-        ("-gnat2022", "-gnatyM120", "-gnata", "-gnatwa", "-gnatVa");
+        ("-gnat2022", "-gnatyM120", "-gnata", "-gnatwa", "-gnatVa")
+        & Warning_Switches & Coverage_Switches;
    end Compiler;
 
    package Binder is
       for Switches ("Ada") use ("-Es");
    end Binder;
+
+   package Linker is
+      case Coverage is
+         when "false" => null;
+         when "true"  =>
+            for Default_Switches ("Ada") use ("--coverage");
+      end case;
+   end Linker;
 end Quality_Manager_Tests;

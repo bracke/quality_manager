@@ -81,6 +81,20 @@ package Quality_Manager.Releases is
       Checks                : out Check_Results;
       Result                : out Quality_Manager.Results.Operation_Result);
 
+   procedure Run_Local_Checks_With_Tools
+     (Item                  : in out Context;
+      Operation             : Quality_Manager.Identities.Operation_Id;
+      Project_Path          : String;
+      Candidate_Commit      : String;
+      Source_Fingerprint    : String;
+      Release_Config_Digest : String;
+      Coverage_Basis_Points : Natural;
+      Proof_Applicable      : Boolean;
+      Alire_Executable      : String;
+      Git_Executable        : String;
+      Checks                : out Check_Results;
+      Result                : out Quality_Manager.Results.Operation_Result);
+
    procedure Invalidate_If_Changed
      (Item                 : in out Context;
       Release_Id           : String;
@@ -96,8 +110,18 @@ package Quality_Manager.Releases is
       Result      : out Quality_Manager.Results.Operation_Result);
 
    procedure Create (Project_Selector : String; Profile : String);
+   procedure Create_Configured
+     (Project_Selector : String;
+      Profile          : String;
+      Config_Path      : String;
+      Config_Required  : Boolean);
    procedure Qualify (Release_Id : String);
    procedure Export_Evidence (Release_Id : String; Output_Path : String);
+   procedure Export_Evidence_Configured
+     (Release_Id      : String;
+      Output_Path     : String;
+      Config_Path     : String;
+      Config_Required : Boolean);
 
 private
    type Context is limited record

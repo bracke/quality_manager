@@ -276,6 +276,16 @@ package body Quality_Manager.Maintenance is
    procedure Run_Cycle
      (Project_Selector : String := "";
       Dry_Run          : Boolean := False) is
+   begin
+      Run_Configured_Cycle
+        (Project_Selector, Dry_Run, "config/quality-manager.toml", False);
+   end Run_Cycle;
+
+   procedure Run_Configured_Cycle
+     (Project_Selector : String;
+      Dry_Run          : Boolean;
+      Config_Path      : String;
+      Config_Required  : Boolean) is
       Settings  : Quality_Manager.Config.Settings;
       Store     : aliased Quality_Manager.Storage.Store;
       Scheduler : aliased Quality_Manager.Scheduler.Scheduler_Type;
@@ -284,7 +294,7 @@ package body Quality_Manager.Maintenance is
       Result    : Operation_Result;
       Close_Result : Operation_Result;
    begin
-      Quality_Manager.Config.Load ("config/quality-manager.toml", False, Settings, Result);
+      Quality_Manager.Config.Load (Config_Path, Config_Required, Settings, Result);
       if Result.Kind = Success then
          Quality_Manager.Storage.Open
            (Store, To_String (Settings.Coordinator_Database), True, Result);
@@ -306,5 +316,5 @@ package body Quality_Manager.Maintenance is
       if Result.Kind /= Success then
          raise Maintenance_Error with Message (Result);
       end if;
-   end Run_Cycle;
+   end Run_Configured_Cycle;
 end Quality_Manager.Maintenance;

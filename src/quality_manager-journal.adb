@@ -1,4 +1,6 @@
-package body Quality_Manager.Journal is
+package body Quality_Manager.Journal
+  with SPARK_Mode
+is
    function Action_For (State : Journal_State) return Recovery_Action is
      (case State is
          when Prepared           => Invoke_After_Revalidation,
