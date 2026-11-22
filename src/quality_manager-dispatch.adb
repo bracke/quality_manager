@@ -805,6 +805,71 @@ package body Quality_Manager.Dispatch is
       end case;
    end Execute_Or_Reconcile;
 
+   procedure Queue_Persisted
+     (Store   : in out Quality_Manager.Storage.Store;
+      Runner  : Quality_Manager.Integrations.Runner.Adapter;
+      Work_Id : String;
+      Result  : out Operation_Result) is
+      Work      : Quality_Manager.Storage.Schema.Work_Item;
+      Mapping   : Quality_Manager.Storage.Schema.Dispatch;
+      Snapshot  : Quality_Manager.Integrations.Runner.Task_Snapshot;
+      Response  : Quality_Manager.Integrations.JSON_CLI.Response;
+   begin
+      Quality_Manager.Storage.Decoding.Read_Work (Store, Work_Id, Work, Result);
+      if Result.Kind /= Success then
+         return;
+      elsif Work.State not in Quality_Manager.Model.Published | Quality_Manager.Model.Queued then
+         Result := Make_Result
+           (Not_Ready, "published remediation is not queueable", "qm.dispatch.queue-state");
+         return;
+      elsif Length (Work.Planned_Source_Fingerprint) = 0 then
+         Result := Make_Result
+           (Stale_Evidence, "remediation has no assessed source fingerprint", "qm.dispatch.source-missing");
+         return;
+      end if;
+      Quality_Manager.Storage.Decoding.Read_Active_Dispatch
+        (Store, To_String (Work.Global_Remediation), Mapping, Result);
+      if Result.Kind /= Success then
+         return;
+      elsif Mapping.Work_Id /= Work.Work_Id
+        or else Mapping.Improve_Task.Plan_Id /= Work.Improve_Plan_Id
+        or else Natural (Mapping.Improve_Task.Revision) /= Work.Improve_Revision
+        or else Mapping.Improve_Task.Task_Id /= Work.Improve_Task_Id
+      then
+         Result := Make_Result
+           (Integrity_Error, "published dispatch does not match persisted remediation", "qm.dispatch.mapping-drift");
+         return;
+      end if;
+      Quality_Manager.Integrations.Runner.Inspect
+        (Runner, To_String (Work.Project.Canonical_Path), To_String (Mapping.Native_Task_Id), Response);
+      Quality_Manager.Integrations.Runner.Decode_Snapshot (Response, Snapshot, Result);
+      if Result.Kind /= Success then
+         return;
+      elsif Snapshot.Task_Id /= Mapping.Native_Task_Id then
+         Result := Make_Result
+           (Integrity_Error, "inspected native task does not match publication", "qm.dispatch.native-task");
+         return;
+      elsif Snapshot.Source_Fingerprint /= Work.Planned_Source_Fingerprint then
+         Result := Make_Result
+           (Stale_Evidence, "native project source changed after planning", "qm.dispatch.source-drift");
+         return;
+      elsif not Snapshot.Ready
+        or else Snapshot.State /= Quality_Manager.Integrations.Runner.Ready_State
+      then
+         Result := Make_Result
+           (Not_Ready, "published native task is not ready", "qm.dispatch.native-not-ready");
+         return;
+      end if;
+      if Work.State = Quality_Manager.Model.Published then
+         Quality_Manager.Storage.Transition_Work
+           (Store, Work_Id, Quality_Manager.Model.Published, Quality_Manager.Model.Queued,
+            "event:" & Work_Id & ":native:queued", "native task readiness confirmed",
+            To_String (Mapping.Native_Task_Id), Result);
+      else
+         Result := Make_Result (Success);
+      end if;
+   end Queue_Persisted;
+
    procedure Execute_Persisted
      (Store            : in out Quality_Manager.Storage.Store;
       Runner           : Quality_Manager.Integrations.Runner.Adapter;
@@ -812,6 +877,7 @@ package body Quality_Manager.Dispatch is
       Lease_Owner      : String;
       Now              : Interfaces.Unsigned_64;
       Lease_Expires_At : Interfaces.Unsigned_64;
+      Timeout_Seconds  : Positive;
       Snapshot         : out Quality_Manager.Integrations.Runner.Task_Snapshot;
       Result           : out Operation_Result) is
       Work       : Quality_Manager.Storage.Schema.Work_Item;
@@ -886,8 +952,7 @@ package body Quality_Manager.Dispatch is
       Quality_Manager.Storage.Decoding.Read_Work (Store, Work_Id, Work, Result);
       if Result.Kind /= Success then
          return;
-      elsif Work.State not in Quality_Manager.Model.Published |
-                               Quality_Manager.Model.Queued |
+      elsif Work.State not in Quality_Manager.Model.Queued |
                                Quality_Manager.Model.Executing
       then
          Result := Make_Result
@@ -961,7 +1026,7 @@ package body Quality_Manager.Dispatch is
          Expected_Project_Identity => Inspected.Project_Identity,
          Expected_Source_Fingerprint => Work.Planned_Source_Fingerprint,
          Execution_Policy => Inspected.Execution_Policy,
-         Timeout_Seconds => 3_600);
+         Timeout_Seconds => Timeout_Seconds);
       if not Lease_Available then
          return;
       elsif Expected = Interfaces.Unsigned_64'Last then
@@ -970,14 +1035,6 @@ package body Quality_Manager.Dispatch is
          return;
       end if;
 
-      if Current = Quality_Manager.Model.Published then
-         Move_To
-           (Quality_Manager.Model.Queued, "queued", "native task readiness confirmed",
-            To_String (Mapping.Native_Task_Id));
-         if Result.Kind /= Success then
-            return;
-         end if;
-      end if;
       if Current = Quality_Manager.Model.Queued then
          Move_To
            (Quality_Manager.Model.Executing, "executing", "native task execution prepared",

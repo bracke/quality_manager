@@ -1,6 +1,8 @@
 with Ada.Strings.Unbounded;
+with Interfaces;
 with Quality_Manager.Integrations.Improve;
 with Quality_Manager.Integrations.Quality;
+with Quality_Manager.Integrations.Runner;
 with Quality_Manager.Results;
 with Quality_Manager.Scheduler;
 
@@ -39,12 +41,20 @@ package Quality_Manager.Maintenance is
       Store     : Quality_Manager.Scheduler.Store_Access;
       Scheduler : access Quality_Manager.Scheduler.Scheduler_Type;
       Quality   : Quality_Manager.Integrations.Quality.Adapter;
-      Planner   : Quality_Manager.Integrations.Improve.Adapter);
+      Planner   : Quality_Manager.Integrations.Improve.Adapter;
+      Runner    : Quality_Manager.Integrations.Runner.Adapter;
+      Maximum_Task_Seconds : Positive := 3_600);
 
    procedure Run_Cycle
      (Item             : in out Context;
       Project_Selector : String := "";
       Dry_Run          : Boolean := False;
+      Result           : out Quality_Manager.Results.Operation_Result);
+
+   procedure Reconcile_Authorized_Work
+     (Item             : in out Context;
+      Project_Selector : String;
+      Now              : Interfaces.Unsigned_64;
       Result           : out Quality_Manager.Results.Operation_Result);
 
    procedure Run_Cycle
@@ -64,5 +74,7 @@ private
       Queue    : Scheduler_Access;
       Quality  : Quality_Manager.Integrations.Quality.Adapter;
       Planner  : Quality_Manager.Integrations.Improve.Adapter;
+      Runner   : Quality_Manager.Integrations.Runner.Adapter;
+      Maximum_Task_Seconds : Positive := 3_600;
    end record;
 end Quality_Manager.Maintenance;

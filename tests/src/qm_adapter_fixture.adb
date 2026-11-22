@@ -204,15 +204,7 @@ begin
             then
                declare
                   Operation : constant String :=
-                    (if Ada.Strings.Fixed.Index (Text, "qm-execution-2") > 0 then "qm-execution-2"
-                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-3") > 0 then "qm-execution-3"
-                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-4") > 0 then "qm-execution-4"
-                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-5") > 0 then "qm-execution-5"
-                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-6") > 0 then "qm-execution-6"
-                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-7") > 0 then "qm-execution-7"
-                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-8") > 0 then "qm-execution-8"
-                     elsif Ada.Strings.Fixed.Index (Text, "qm-execution-9") > 0 then "qm-execution-9"
-                     elsif Option_Value (Text, "operation-id") /= ""
+                    (if Option_Value (Text, "operation-id") /= ""
                      then Option_Value (Text, "operation-id")
                      else "inspect-operation");
                   Is_Execute : constant Boolean := Ada.Strings.Fixed.Index (Text, "work execute ") = 1;
@@ -233,7 +225,11 @@ begin
                      """operation_id"":""" & Operation & """,""project_identity"":""project-identity""," &
                      """source_fingerprint"":""" &
                      (if Is_Integrate and then not Pending_Integration
-                      then "integrated-source" else "source-fingerprint") &
+                      then "integrated-source"
+                      elsif Is_Inspect then "candidate-source"
+                      elsif Option_Value (Text, "expected-source-fingerprint") /= ""
+                      then Option_Value (Text, "expected-source-fingerprint")
+                      else "source-fingerprint") &
                      """,""task_id"":""TASK-001""," &
                      """task_revision"":""task-revision"",""effective_task_revision"":""effective-revision""," &
                      """execution_policy"":""policy-fingerprint"",""execution_generation"":""1""," &

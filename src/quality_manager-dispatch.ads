@@ -50,8 +50,15 @@ package Quality_Manager.Dispatch is
       Lease_Owner      : String;
       Now              : Interfaces.Unsigned_64;
       Lease_Expires_At : Interfaces.Unsigned_64;
+      Timeout_Seconds  : Positive;
       Snapshot         : out Quality_Manager.Integrations.Runner.Task_Snapshot;
       Result           : out Quality_Manager.Results.Operation_Result);
+
+   procedure Queue_Persisted
+     (Store   : in out Quality_Manager.Storage.Store;
+      Runner  : Quality_Manager.Integrations.Runner.Adapter;
+      Work_Id : String;
+      Result  : out Quality_Manager.Results.Operation_Result);
 
    procedure Integrate_Or_Reconcile
      (Store                     : in out Quality_Manager.Storage.Store;

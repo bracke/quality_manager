@@ -34,6 +34,7 @@ with Quality_Manager.Priorities;
 with Quality_Manager.Policies;
 with Quality_Manager.Schemas;
 with Quality_Manager.Storage.Schema;
+with Quality_Manager.Storage.Decoding;
 with Quality_Manager.Storage.Migrations;
 with Quality_Manager.Storage.Records;
 with Quality_Manager.Transitions;
@@ -1727,7 +1728,7 @@ package body Quality_Manager_Test_Suite is
          Improve_Task_Id => To_Unbounded_String ("IMP-001"),
          Improve_Content_SHA256 => To_Unbounded_String
            ("plan-content-sha256-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-         Planned_Source_Fingerprint => To_Unbounded_String ("source-fingerprint"),
+         Planned_Source_Fingerprint => To_Unbounded_String ("candidate-source"),
          Effective_Policy_Digest => To_Unbounded_String ("policy-1"),
          State => Quality_Manager.Model.Awaiting_Approval,
          Outcome => Quality_Manager.Model.Authorization_Required);
@@ -1802,14 +1803,22 @@ package body Quality_Manager_Test_Suite is
          Quality_Manager.Storage.Records.Save (Store, Stale_Work, Result);
          Quality_Manager.Dispatch.Bind_Published_Task (Store, Stale_Mapping, Result);
          Quality_Manager.Dispatch.Execute_Persisted
-           (Store, Runner, "work:publication-stale", "coordinator:publication", 50, 100,
+           (Store, Runner, "work:publication-stale", "coordinator:publication", 50, 100, 60,
             Snapshot, Result);
          Assert
+           (Result.Kind = Quality_Manager.Results.Not_Ready,
+            "published work cannot bypass durable scheduler queueing");
+         Quality_Manager.Dispatch.Queue_Persisted
+           (Store, Runner, "work:publication-stale", Result);
+         Assert
            (Result.Kind = Quality_Manager.Results.Stale_Evidence,
-            "native source drift is rejected before execution");
+            "native source drift is rejected before queueing");
       end;
+      Quality_Manager.Dispatch.Queue_Persisted
+        (Store, Runner, "work:publication", Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "published work is durably queued");
       Quality_Manager.Dispatch.Execute_Persisted
-        (Store, Runner, "work:publication", "coordinator:publication", 50, 100,
+        (Store, Runner, "work:publication", "coordinator:publication", 50, 100, 60,
          Snapshot, Result);
       Assert
         (Result.Kind = Quality_Manager.Results.Success
@@ -1822,7 +1831,7 @@ package body Quality_Manager_Test_Suite is
          and then To_String (Loaded.State) = Quality_Manager.Model.Awaiting_Integration'Image,
          "native execution advances durable work to independent integration");
       Quality_Manager.Dispatch.Execute_Persisted
-        (Store, Runner, "work:publication", "coordinator:publication", 60, 110,
+        (Store, Runner, "work:publication", "coordinator:publication", 60, 110, 60,
          Snapshot, Result);
       Assert
         (Result.Kind = Quality_Manager.Results.Not_Ready,
@@ -2934,9 +2943,11 @@ package body Quality_Manager_Test_Suite is
       Scheduler : aliased Quality_Manager.Scheduler.Scheduler_Type;
       Quality   : Quality_Manager.Integrations.Quality.Adapter;
       Planner   : Quality_Manager.Integrations.Improve.Adapter;
+      Runner    : Quality_Manager.Integrations.Runner.Adapter;
       Context   : Quality_Manager.Maintenance.Context;
       Result    : Quality_Manager.Results.Operation_Result;
       Values    : Quality_Manager.Storage.Entity_Vectors.Vector;
+      Remediation_Work : Unbounded_String;
 
       procedure Cleanup is
       begin
@@ -2957,8 +2968,9 @@ package body Quality_Manager_Test_Suite is
         (Quality, "./bin/qm_adapter_fixture", "quality.db");
       Quality_Manager.Integrations.Improve.Initialize
         (Planner, "./bin/qm_adapter_fixture", "improve.toml", "quality.db", "improve.db");
+      Quality_Manager.Integrations.Runner.Initialize (Runner, "./bin/qm_adapter_fixture");
       Quality_Manager.Maintenance.Initialize
-        (Context, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality, Planner);
+        (Context, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality, Planner, Runner, 60);
       Quality_Manager.Maintenance.Run_Cycle (Context, "", False, Result);
       Assert
         (Result.Kind = Quality_Manager.Results.Success
@@ -3010,6 +3022,7 @@ package body Quality_Manager_Test_Suite is
               (Quality_Manager.Model.Awaiting_Approval)
             then
                Approval_Count := Approval_Count + 1;
+               Remediation_Work := Value.Entity_Key;
                Assert
                  (Ada.Strings.Fixed.Index (To_String (Value.Payload), """plan_id"":""PLAN-001""") > 0
                   and then Ada.Strings.Fixed.Index
@@ -3064,6 +3077,55 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Maintenance.Run_Cycle (Context, "8", True, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success,
               "disabled project can be observed in dry-run without dispatch");
+      declare
+         Work : Quality_Manager.Storage.Schema.Work_Item;
+         Approval : Quality_Manager.Storage.Schema.Approval;
+      begin
+         Quality_Manager.Storage.Decoding.Read_Work
+           (Store, To_String (Remediation_Work), Work, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success,
+                 "approval-gated maintenance work can be reconstructed");
+         Approval :=
+           (Approval_Id => To_Unbounded_String ("approval-maintenance-expired"),
+            Project => Work.Project,
+            Plan_Id => Work.Improve_Plan_Id,
+            Plan_Revision => Positive (Work.Improve_Revision),
+            Content_Digest => Work.Improve_Content_SHA256,
+            Authorized_Action => To_Unbounded_String ("publish"),
+            Policy_Digest => Work.Effective_Policy_Digest,
+            Approver => To_Unbounded_String ("quality-manager-test"),
+            Created_At => 1,
+            Expires_At => 40);
+         Quality_Manager.Storage.Records.Save (Store, Approval, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success,
+                 "expired exact maintenance approval is durable audit evidence");
+         Quality_Manager.Maintenance.Reconcile_Authorized_Work
+           (Context, "7", 50, Result);
+         Quality_Manager.Storage.Decoding.Read_Work
+           (Store, To_String (Remediation_Work), Work, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then Work.State = Quality_Manager.Model.Awaiting_Approval,
+            "expired approval cannot publish remediation");
+         Approval.Approval_Id := To_Unbounded_String ("approval-maintenance");
+         Approval.Expires_At := 100;
+         Quality_Manager.Storage.Records.Save (Store, Approval, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success,
+                 "current exact maintenance approval is durable");
+         Quality_Manager.Maintenance.Reconcile_Authorized_Work
+           (Context, "7", 50, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success,
+            "maintenance publishes and executes exact authorized work: "
+            & Quality_Manager.Results.Message (Result));
+         Quality_Manager.Storage.Decoding.Read_Work
+           (Store, To_String (Remediation_Work), Work, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then Work.State = Quality_Manager.Model.Awaiting_Integration,
+            "authorized maintenance stops at independent native integration, got "
+            & Quality_Manager.Model.Work_State'Image (Work.State));
+      end;
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception

@@ -7,6 +7,7 @@ with Quality_Manager.Model;
 
 package body Quality_Manager.Storage.Decoding is
    use type Jsonlib.Documents.Value_Kind;
+   use type Interfaces.Unsigned_64;
    use type Quality_Manager.Results.Result_Kind;
    use Quality_Manager.Results;
 
@@ -38,6 +39,18 @@ package body Quality_Manager.Storage.Decoding is
       Authorization_Id => Null_Unbounded_String,
       State => Quality_Manager.Model.Published,
       Active => False);
+
+   Empty_Approval : constant Quality_Manager.Storage.Schema.Approval :=
+     (Approval_Id => Null_Unbounded_String,
+      Project => (Null_Unbounded_String, 1, Null_Unbounded_String),
+      Plan_Id => Null_Unbounded_String,
+      Plan_Revision => 1,
+      Content_Digest => Null_Unbounded_String,
+      Authorized_Action => Null_Unbounded_String,
+      Policy_Digest => Null_Unbounded_String,
+      Approver => Null_Unbounded_String,
+      Created_At => 0,
+      Expires_At => 0);
 
    function String_Field
      (Document : Jsonlib.Documents.Document;
@@ -78,6 +91,29 @@ package body Quality_Manager.Storage.Decoding is
       Value := Natural (Number);
       return True;
    end Natural_Field;
+
+   function Sequence_Field
+     (Document : Jsonlib.Documents.Document;
+      Parent   : Jsonlib.Documents.Node;
+      Name     : String;
+      Value    : out Interfaces.Unsigned_64) return Boolean is
+      Node   : constant Jsonlib.Documents.Node := Document.Member (Parent, Name);
+      Number : Long_Long_Integer;
+   begin
+      if not Jsonlib.Documents.Is_Present (Node)
+        or else Document.Kind (Node) /= Jsonlib.Documents.Integer_Value
+      then
+         Value := 0;
+         return False;
+      end if;
+      Number := Document.As_Integer (Node);
+      if Number < 0 then
+         Value := 0;
+         return False;
+      end if;
+      Value := Interfaces.Unsigned_64 (Number);
+      return True;
+   end Sequence_Field;
 
    function Project_Field
      (Document : Jsonlib.Documents.Document;
@@ -236,4 +272,114 @@ package body Quality_Manager.Storage.Decoding is
          Result := Make_Result
            (Integrity_Error, "persisted dispatch cannot be decoded", "qm.storage.dispatch-decode");
    end Read_Active_Dispatch;
+
+   procedure Decode_Approval
+     (Stored : Quality_Manager.Storage.Stored_Entity;
+      Value  : out Quality_Manager.Storage.Schema.Approval;
+      Result : out Operation_Result) is
+      Prefix   : constant String := "approval:";
+      Document : Jsonlib.Documents.Document;
+      Root     : Jsonlib.Documents.Node;
+      Revision : Natural;
+      Key      : constant String := To_String (Stored.Entity_Key);
+   begin
+      Value := Empty_Approval;
+      if Stored.Kind /= Approval_Record
+        or else Key'Length <= Prefix'Length
+        or else Key (Key'First .. Key'First + Prefix'Length - 1) /= Prefix
+      then
+         Result := Make_Result
+           (Integrity_Error, "approval record identity is inconsistent", "qm.storage.approval-kind");
+         return;
+      end if;
+      Parse (To_String (Stored.Payload), Document, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Root := Document.Root;
+      Value.Approval_Id := To_Unbounded_String (Key (Key'First + Prefix'Length .. Key'Last));
+      if not Project_Field (Document, Root, Value.Project)
+        or else not String_Field (Document, Root, "plan_id", Value.Plan_Id)
+        or else Length (Value.Plan_Id) = 0
+        or else not Natural_Field (Document, Root, "plan_revision", Revision)
+        or else Revision = 0
+        or else not String_Field (Document, Root, "content_digest", Value.Content_Digest)
+        or else Length (Value.Content_Digest) = 0
+        or else not String_Field (Document, Root, "action", Value.Authorized_Action)
+        or else Length (Value.Authorized_Action) = 0
+        or else not String_Field (Document, Root, "policy_digest", Value.Policy_Digest)
+        or else Length (Value.Policy_Digest) = 0
+        or else not String_Field (Document, Root, "approver", Value.Approver)
+        or else Length (Value.Approver) = 0
+        or else not Sequence_Field (Document, Root, "created_at", Value.Created_At)
+        or else not Sequence_Field (Document, Root, "expires_at", Value.Expires_At)
+      then
+         Result := Make_Result
+           (Integrity_Error, "persisted approval is incomplete", "qm.storage.approval-fields");
+         return;
+      end if;
+      Value.Plan_Revision := Positive (Revision);
+      Result := Make_Result (Success);
+   exception
+      when Constraint_Error =>
+         Value := Empty_Approval;
+         Result := Make_Result
+           (Incompatible_Contract, "persisted approval has unknown values", "qm.storage.approval-values");
+      when others =>
+         Value := Empty_Approval;
+         Result := Make_Result
+           (Integrity_Error, "persisted approval cannot be decoded", "qm.storage.approval-decode");
+   end Decode_Approval;
+
+   procedure Find_Approval_For_Work
+     (Item   : in out Quality_Manager.Storage.Store;
+      Work   : Quality_Manager.Storage.Schema.Work_Item;
+      Now    : Interfaces.Unsigned_64;
+      Value  : out Quality_Manager.Storage.Schema.Approval;
+      Result : out Operation_Result) is
+      Values  : Quality_Manager.Storage.Entity_Vectors.Vector;
+      Decoded : Quality_Manager.Storage.Schema.Approval;
+      Found   : Boolean := False;
+      Expired : Boolean := False;
+   begin
+      Value := Empty_Approval;
+      Quality_Manager.Storage.List
+        (Item, Approval_Record, Values, 100_000, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      for Stored of Values loop
+         Decode_Approval (Stored, Decoded, Result);
+         if Result.Kind /= Success then
+            return;
+         end if;
+         if Quality_Manager.Identities.Equal (Decoded.Project, Work.Project)
+           and then Decoded.Plan_Id = Work.Improve_Plan_Id
+           and then Natural (Decoded.Plan_Revision) = Work.Improve_Revision
+           and then Decoded.Content_Digest = Work.Improve_Content_SHA256
+           and then To_String (Decoded.Authorized_Action) = "publish"
+           and then Decoded.Policy_Digest = Work.Effective_Policy_Digest
+         then
+            if Decoded.Created_At > Now
+              or else (Decoded.Expires_At > 0 and then Now > Decoded.Expires_At)
+            then
+               Expired := True;
+            elsif not Found
+              or else To_String (Decoded.Approval_Id) < To_String (Value.Approval_Id)
+            then
+               Value := Decoded;
+               Found := True;
+            end if;
+         end if;
+      end loop;
+      if Found then
+         Result := Make_Result (Success);
+      elsif Expired then
+         Result := Make_Result
+           (Authorization_Required, "matching approval is not currently valid", "qm.approval.time");
+      else
+         Result := Make_Result
+           (Not_Found, "no exact durable approval exists for remediation", "qm.approval.not-found");
+      end if;
+   end Find_Approval_For_Work;
 end Quality_Manager.Storage.Decoding;

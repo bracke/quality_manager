@@ -294,5 +294,10 @@ Published remediation can now be reconstructed from the coordinator database and
 native headless engine. The worker binds execution to the assessed source fingerprint retained with the Improve work,
 the exact active publication mapping, native task revision, project identity, execution policy, and a fenced project
 lease. Source drift is rejected before execution, and a completed isolated task advances only to
-`Awaiting_Integration`; replay cannot start a second native execution. Scheduler discovery of durable approvals and
-automatic integration/reassessment remain the next coordination slice.
+`Awaiting_Integration`; replay cannot start a second native execution.
+
+Maintenance now discovers exact durable approvals, rejects approvals that are premature or expired, confirms Improve's
+atomic approval and publication contracts, persists native readiness as `Queued`, and reserves an agent scheduler slot
+before execution. Restart reconstruction includes queued and executing remediation. One project's unavailable approval
+or native readiness does not prevent unrelated projects from progressing. Automatic native workspace integration,
+fresh reassessment, and independent Improve verification remain the next coordination slice.

@@ -1,23 +1,27 @@
 with Ada.Calendar;
+with Ada.Calendar.Conversions;
 with Ada.Calendar.Formatting;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
-with Interfaces;
 with Jsonlib.Documents;
 with Jsonlib.Errors;
 with Jsonlib.Parsers;
 with Quality_Manager.Config;
+with Quality_Manager.Dispatch;
 with Quality_Manager.Identities;
 with Quality_Manager.Integrations.JSON_CLI;
 with Quality_Manager.Model;
 with Quality_Manager.Planning;
 with Quality_Manager.Priorities;
 with Quality_Manager.Storage.Records;
+with Quality_Manager.Storage.Decoding;
 with Quality_Manager.Storage.Schema;
 with Quality_Manager.Verification;
 
 package body Quality_Manager.Maintenance is
    use type Jsonlib.Documents.Value_Kind;
+   use type Interfaces.Unsigned_64;
+   use type Quality_Manager.Model.Work_State;
    use type Quality_Manager.Results.Result_Kind;
    use type Quality_Manager.Scheduler.Store_Access;
    use type Quality_Manager.Scheduler.Work_Resource;
@@ -51,12 +55,16 @@ package body Quality_Manager.Maintenance is
       Store     : Quality_Manager.Scheduler.Store_Access;
       Scheduler : access Quality_Manager.Scheduler.Scheduler_Type;
       Quality   : Quality_Manager.Integrations.Quality.Adapter;
-      Planner   : Quality_Manager.Integrations.Improve.Adapter) is
+      Planner   : Quality_Manager.Integrations.Improve.Adapter;
+      Runner    : Quality_Manager.Integrations.Runner.Adapter;
+      Maximum_Task_Seconds : Positive := 3_600) is
    begin
       Item.Database := Store;
       Item.Queue := Scheduler_Access (Scheduler);
       Item.Quality := Quality;
       Item.Planner := Planner;
+      Item.Runner := Runner;
+      Item.Maximum_Task_Seconds := Maximum_Task_Seconds;
    end Initialize;
 
    function Natural_Field
@@ -510,6 +518,215 @@ package body Quality_Manager.Maintenance is
       end loop;
    end Execute_Queued_Assessments;
 
+   function Unix_Now return Interfaces.Unsigned_64 is
+      Value : constant Long_Long_Integer := Long_Long_Integer
+        (Ada.Calendar.Conversions.To_Unix_Time_64 (Ada.Calendar.Clock));
+   begin
+      return (if Value < 0 then 0 else Interfaces.Unsigned_64 (Value));
+   end Unix_Now;
+
+   procedure Reconcile_Authorized_Remediations
+     (Item             : in out Context;
+      Project_Selector : String;
+      Now              : Interfaces.Unsigned_64;
+      Result           : out Operation_Result) is
+      Values    : Quality_Manager.Storage.Entity_Vectors.Vector;
+      Work      : Quality_Manager.Storage.Schema.Work_Item;
+      Approval  : Quality_Manager.Storage.Schema.Approval;
+      Published : Quality_Manager.Storage.Schema.Dispatch;
+      Local     : Operation_Result;
+
+      procedure Stop_Work
+        (State      : Quality_Manager.Model.Work_State;
+         Work_Id    : String;
+         Target     : Quality_Manager.Model.Work_State;
+         Diagnostic : String) is
+      begin
+         Quality_Manager.Storage.Transition_Work
+           (Item.Database.all, Work_Id, State, Target,
+            "event:" & Work_Id & ":maintenance:remediation-stop",
+            "autonomous-remediation", Diagnostic, Local);
+      end Stop_Work;
+
+      procedure Queue (Value : Quality_Manager.Storage.Schema.Work_Item) is
+      begin
+         Quality_Manager.Dispatch.Queue_Persisted
+           (Item.Database.all, Item.Runner, To_String (Value.Work_Id), Local);
+         if Local.Kind = Success then
+            Quality_Manager.Scheduler.Enqueue (Item.Queue.all, To_String (Value.Work_Id));
+            Local := Quality_Manager.Scheduler.Last_Result (Item.Queue.all);
+            if Local.Kind /= Success then
+               Result := Local;
+            end if;
+         elsif Local.Kind = Stale_Evidence then
+            Stop_Work
+              (Value.State, To_String (Value.Work_Id), Quality_Manager.Model.Blocked, Message (Local));
+            if Local.Kind /= Success then
+               Result := Local;
+            end if;
+         elsif Local.Kind not in Not_Ready | Temporarily_Unavailable then
+            Stop_Work
+              (Value.State, To_String (Value.Work_Id),
+               Quality_Manager.Model.Needs_Intervention, Message (Local));
+            if Local.Kind /= Success then
+               Result := Local;
+            end if;
+         end if;
+      end Queue;
+   begin
+      Result := Make_Result (Success);
+      Quality_Manager.Storage.List
+        (Item.Database.all, Quality_Manager.Storage.Work_Item_Record, Values, 100_000, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      for Stored of Values loop
+         if To_String (Stored.State) in Quality_Manager.Model.Awaiting_Approval'Image |
+                                        Quality_Manager.Model.Published'Image |
+                                        Quality_Manager.Model.Queued'Image |
+                                        Quality_Manager.Model.Executing'Image
+         then
+            Quality_Manager.Storage.Decoding.Read_Work
+              (Item.Database.all, To_String (Stored.Entity_Key), Work, Local);
+            if Local.Kind /= Success then
+               Result := Local;
+               return;
+            end if;
+            if Selected
+              (Project_Selector, Work.Project.Quality_Project_Id,
+               To_String (Work.Project.Canonical_Path))
+            then
+               if Work.State = Quality_Manager.Model.Awaiting_Approval then
+                  Quality_Manager.Storage.Decoding.Find_Approval_For_Work
+                    (Item.Database.all, Work, Now, Approval, Local);
+                  if Local.Kind = Success then
+                     Quality_Manager.Dispatch.Publish_Approved
+                       (Item.Database.all, Item.Planner, Work, Approval, Now, Published, Local);
+                     if Local.Kind = Success then
+                        Work.State := Quality_Manager.Model.Published;
+                        Queue (Work);
+                        if Result.Kind /= Success then
+                           return;
+                        end if;
+                     else
+                        Stop_Work
+                          (Work.State, To_String (Work.Work_Id),
+                           Quality_Manager.Model.Needs_Intervention, Message (Local));
+                        if Local.Kind /= Success then
+                           Result := Local;
+                           return;
+                        end if;
+                     end if;
+                  elsif Local.Kind not in Not_Found | Authorization_Required then
+                     Result := Local;
+                     return;
+                  end if;
+               elsif Work.State in Quality_Manager.Model.Published | Quality_Manager.Model.Queued then
+                  Queue (Work);
+                  if Result.Kind /= Success then
+                     return;
+                  end if;
+               elsif Work.State = Quality_Manager.Model.Executing then
+                  Quality_Manager.Scheduler.Enqueue_Work
+                    (Item.Queue.all, To_String (Work.Work_Id),
+                     "quality-project:" & To_String (Work.Project.Quality_Database_Id) & ":"
+                     & Ada.Strings.Fixed.Trim
+                         (Positive'Image (Work.Project.Quality_Project_Id), Ada.Strings.Both),
+                     Quality_Manager.Priorities.From_Persisted_Priority (Work.Priority),
+                     Stored.Generation, Quality_Manager.Scheduler.Agent_Resource);
+                  Local := Quality_Manager.Scheduler.Last_Result (Item.Queue.all);
+                  if Local.Kind /= Success then
+                     Result := Local;
+                     return;
+                  end if;
+               end if;
+            end if;
+         end if;
+      end loop;
+      Result := Make_Result (Success);
+   end Reconcile_Authorized_Remediations;
+
+   procedure Execute_Queued_Remediations
+     (Item   : in out Context;
+      Now    : Interfaces.Unsigned_64;
+      Result : out Operation_Result) is
+      Work_Id  : Unbounded_String;
+      Resource : Quality_Manager.Scheduler.Work_Resource;
+      Found    : Boolean;
+      Snapshot : Quality_Manager.Integrations.Runner.Task_Snapshot;
+      Local    : Operation_Result;
+      Expires  : Interfaces.Unsigned_64;
+   begin
+      Result := Make_Result (Success);
+      if Interfaces.Unsigned_64 (Item.Maximum_Task_Seconds) + 60
+        > Interfaces.Unsigned_64'Last - Now
+      then
+         Result := Make_Result
+           (Integrity_Error, "execution lease expiration is out of range", "qm.maintenance.lease-range");
+         return;
+      end if;
+      Expires := Now + Interfaces.Unsigned_64 (Item.Maximum_Task_Seconds) + 60;
+      loop
+         Quality_Manager.Scheduler.Take_Next (Item.Queue.all, Work_Id, Resource, Found);
+         exit when not Found;
+         if Resource /= Quality_Manager.Scheduler.Agent_Resource then
+            Quality_Manager.Scheduler.Complete (Item.Queue.all, To_String (Work_Id));
+            Result := Make_Result
+              (Integrity_Error, "remediation selected a non-agent resource", "qm.maintenance.agent-resource");
+            return;
+         end if;
+         Quality_Manager.Dispatch.Execute_Persisted
+           (Item.Database.all, Item.Runner, To_String (Work_Id),
+            "coordinator:" & Quality_Manager.Storage.Identity (Item.Database.all),
+            Now, Expires, Item.Maximum_Task_Seconds, Snapshot, Local);
+         Quality_Manager.Scheduler.Complete (Item.Queue.all, To_String (Work_Id));
+         if Local.Kind not in Success | Not_Ready | Temporarily_Unavailable then
+            declare
+               Work : Quality_Manager.Storage.Schema.Work_Item;
+            begin
+               Quality_Manager.Storage.Decoding.Read_Work
+                 (Item.Database.all, To_String (Work_Id), Work, Result);
+               if Result.Kind /= Success then
+                  return;
+               elsif Work.State = Quality_Manager.Model.Executing then
+                  Stop_Work : declare
+                     Target : constant Quality_Manager.Model.Work_State :=
+                       (if Local.Kind in Authorization_Required | Integrity_Error | Incompatible_Contract
+                        then Quality_Manager.Model.Needs_Intervention
+                        else Quality_Manager.Model.Blocked);
+                  begin
+                     Quality_Manager.Storage.Transition_Work
+                       (Item.Database.all, To_String (Work_Id), Work.State, Target,
+                        "event:" & To_String (Work_Id) & ":maintenance:execution-stop",
+                        "native-execution", Message (Local), Result);
+                     if Result.Kind /= Success then
+                        return;
+                     end if;
+                  end Stop_Work;
+               end if;
+            end;
+         end if;
+      end loop;
+      Result := Make_Result (Success);
+   end Execute_Queued_Remediations;
+
+   procedure Reconcile_Authorized_Work
+     (Item             : in out Context;
+      Project_Selector : String;
+      Now              : Interfaces.Unsigned_64;
+      Result           : out Operation_Result) is
+   begin
+      if Item.Database = null or else Item.Queue = null then
+         Result := Make_Result
+           (Not_Ready, "maintenance context is not initialized", "qm.maintenance.not-initialized");
+         return;
+      end if;
+      Reconcile_Authorized_Remediations (Item, Project_Selector, Now, Result);
+      if Result.Kind = Success then
+         Execute_Queued_Remediations (Item, Now, Result);
+      end if;
+   end Reconcile_Authorized_Work;
+
    procedure Run_Cycle
      (Item             : in out Context;
       Project_Selector : String := "";
@@ -660,6 +877,13 @@ package body Quality_Manager.Maintenance is
       if Result.Kind = Success and then not Dry_Run then
          Execute_Queued_Assessments (Item, Result);
       end if;
+      if Result.Kind = Success and then not Dry_Run then
+         declare
+            Now : constant Interfaces.Unsigned_64 := Unix_Now;
+         begin
+            Reconcile_Authorized_Work (Item, Project_Selector, Now, Result);
+         end;
+      end if;
    exception
       when others =>
          Result := Make_Result (Integrity_Error, "maintenance cycle failed", "qm.maintenance.internal");
@@ -683,6 +907,7 @@ package body Quality_Manager.Maintenance is
       Scheduler : aliased Quality_Manager.Scheduler.Scheduler_Type;
       Quality   : Quality_Manager.Integrations.Quality.Adapter;
       Planner   : Quality_Manager.Integrations.Improve.Adapter;
+      Runner    : Quality_Manager.Integrations.Runner.Adapter;
       Item      : Context;
       Result    : Operation_Result;
       Close_Result : Operation_Result;
@@ -702,7 +927,11 @@ package body Quality_Manager.Maintenance is
          Quality_Manager.Integrations.Improve.Initialize
            (Planner, To_String (Settings.Improve_Executable), To_String (Settings.Improve_Config),
             To_String (Settings.Quality_Database), To_String (Settings.Improve_State));
-         Initialize (Item, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality, Planner);
+         Quality_Manager.Integrations.Runner.Initialize
+           (Runner, To_String (Settings.Model_Runner_Executable));
+         Initialize
+           (Item, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality, Planner, Runner,
+            Settings.Maximum_Task_Seconds);
          Run_Cycle (Item, Project_Selector, Dry_Run or else Settings.Dry_Run, Result);
       end if;
       Quality_Manager.Scheduler.Shutdown (Scheduler);
