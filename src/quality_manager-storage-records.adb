@@ -81,6 +81,7 @@ package body Quality_Manager.Storage.Records is
             & ",""origin"":" & Q (Quality_Manager.Model.Workflow_Kind'Image (Value.Origin))
             & ",""findings"":" & Q (To_String (Value.Finding_Identities))
             & ",""priority"":" & N (Value.Priority)
+            & ",""baseline_assessment_run"":" & N (Value.Baseline_Assessment_Run)
             & ",""plan_id"":" & Q (To_String (Value.Improve_Plan_Id))
             & ",""plan_revision"":" & N (Value.Improve_Revision)
             & ",""task_id"":" & Q (To_String (Value.Improve_Task_Id))

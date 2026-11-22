@@ -305,5 +305,12 @@ Completed isolated remediation is now reconstructed from its active dispatch and
 then scheduled under the separate per-project integration resource. The coordinator queries the authoritative native
 execution, validates task, source, project, revision, and policy provenance, and invokes only model_runner's controlled
 integration operation. Integration has its own fenced lease and recovery journal. A confirmed integrated source moves
-to `Awaiting_Assessment`; replay cannot integrate it twice. Fresh reassessment and independent Improve verification
-remain the next coordination slice.
+to `Awaiting_Assessment`; replay cannot integrate it twice.
+
+Maintenance remediation now retains its exact originating assessment as the comparison baseline. After integration,
+the coordinator reconstructs the completed native operation, revalidates the integrated source against a fresh Ada
+Quality execution plan, runs a no-reuse assessment, performs the explicit baseline comparison, and invokes Improve
+verification for the exact plan revision, task, and new assessment. The append-only verification record binds native,
+quality, regression, policy, toolchain, and contract evidence. Only the full independent predicate advances work to
+`Verified`; negative outcomes retain their bounded retry or intervention state. The fixture-backed maintenance test now
+executes the complete approval → publication → agent → integration → reassessment → verification loop.

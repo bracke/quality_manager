@@ -43,7 +43,8 @@ package Quality_Manager.Maintenance is
       Quality   : Quality_Manager.Integrations.Quality.Adapter;
       Planner   : Quality_Manager.Integrations.Improve.Adapter;
       Runner    : Quality_Manager.Integrations.Runner.Adapter;
-      Maximum_Task_Seconds : Positive := 3_600);
+      Maximum_Task_Seconds : Positive := 3_600;
+      Maximum_Attempts : Positive := 2);
 
    procedure Run_Cycle
      (Item             : in out Context;
@@ -76,5 +77,6 @@ private
       Planner  : Quality_Manager.Integrations.Improve.Adapter;
       Runner   : Quality_Manager.Integrations.Runner.Adapter;
       Maximum_Task_Seconds : Positive := 3_600;
+      Maximum_Attempts : Positive := 2;
    end record;
 end Quality_Manager.Maintenance;

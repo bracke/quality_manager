@@ -18,6 +18,7 @@ package body Quality_Manager.Storage.Decoding is
       Origin => Quality_Manager.Model.Maintenance,
       Finding_Identities => Null_Unbounded_String,
       Priority => 0,
+      Baseline_Assessment_Run => 0,
       Improve_Plan_Id => Null_Unbounded_String,
       Improve_Revision => 0,
       Improve_Task_Id => Null_Unbounded_String,
@@ -189,6 +190,8 @@ package body Quality_Manager.Storage.Decoding is
         or else not String_Field (Document, Root, "origin", Origin)
         or else not String_Field (Document, Root, "findings", Value.Finding_Identities)
         or else not Natural_Field (Document, Root, "priority", Value.Priority)
+        or else not Natural_Field
+          (Document, Root, "baseline_assessment_run", Value.Baseline_Assessment_Run)
         or else not String_Field (Document, Root, "plan_id", Value.Improve_Plan_Id)
         or else not Natural_Field (Document, Root, "plan_revision", Value.Improve_Revision)
         or else not String_Field (Document, Root, "task_id", Value.Improve_Task_Id)

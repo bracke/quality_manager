@@ -304,6 +304,7 @@ package body Quality_Manager.Planning is
                   Origin => Workflow,
                   Finding_Identities => Plan_Task.Finding_Identities,
                   Priority => 200,
+                  Baseline_Assessment_Run => Assessment_Run,
                   Improve_Plan_Id => Plan.Plan_Id,
                   Improve_Revision => Plan.Revision,
                   Improve_Task_Id => Plan_Task.Task_Id,

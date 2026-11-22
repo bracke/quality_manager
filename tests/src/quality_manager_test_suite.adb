@@ -1028,6 +1028,7 @@ package body Quality_Manager_Test_Suite is
             Origin => Quality_Manager.Model.Maintenance,
             Finding_Identities => To_Unbounded_String ("AQ-02"),
             Priority => 10,
+            Baseline_Assessment_Run => 0,
             Improve_Plan_Id => Null_Unbounded_String,
             Improve_Revision => 0,
             Improve_Task_Id => Null_Unbounded_String,
@@ -1724,6 +1725,7 @@ package body Quality_Manager_Test_Suite is
          Global_Remediation => To_Unbounded_String ("remediation:publication"),
          Project => Project, Origin => Quality_Manager.Model.Maintenance,
          Finding_Identities => To_Unbounded_String ("AQ-01"), Priority => 200,
+         Baseline_Assessment_Run => 1,
          Improve_Plan_Id => To_Unbounded_String ("PLAN-001"), Improve_Revision => 1,
          Improve_Task_Id => To_Unbounded_String ("IMP-001"),
          Improve_Content_SHA256 => To_Unbounded_String
@@ -1745,6 +1747,9 @@ package body Quality_Manager_Test_Suite is
       procedure Cleanup is
       begin
          if Ada.Directories.Exists (Path) then Ada.Directories.Delete_File (Path); end if;
+         if Ada.Directories.Exists ("/tmp/qm-adapter-project-integrated") then
+            Ada.Directories.Delete_File ("/tmp/qm-adapter-project-integrated");
+         end if;
       end Cleanup;
    begin
       Cleanup;
@@ -1897,6 +1902,9 @@ package body Quality_Manager_Test_Suite is
       begin
          if Ada.Directories.Exists (Path) then
             Ada.Directories.Delete_File (Path);
+         end if;
+         if Ada.Directories.Exists ("/tmp/qm-adapter-project-integrated") then
+            Ada.Directories.Delete_File ("/tmp/qm-adapter-project-integrated");
          end if;
       end Cleanup;
    begin
@@ -2527,6 +2535,7 @@ package body Quality_Manager_Test_Suite is
          Origin             => Quality_Manager.Model.Maintenance,
          Finding_Identities => To_Unbounded_String ("AQ-01"),
          Priority           => 1,
+         Baseline_Assessment_Run => 1,
          Improve_Plan_Id    => To_Unbounded_String ("PLAN-001"),
          Improve_Revision   => 1,
          Improve_Task_Id    => To_Unbounded_String ("IMP-001"),
@@ -2812,6 +2821,7 @@ package body Quality_Manager_Test_Suite is
          Global_Remediation => To_Unbounded_String ("remediation:one"),
          Project => Project_1, Origin => Quality_Manager.Model.Maintenance,
          Finding_Identities => To_Unbounded_String ("AQ-01"), Priority => 510,
+         Baseline_Assessment_Run => 1,
          Improve_Plan_Id => To_Unbounded_String ("plan-1"), Improve_Revision => 1,
          Improve_Task_Id => To_Unbounded_String ("task-1"), Improve_Content_SHA256 => Null_Unbounded_String,
          Planned_Source_Fingerprint => Null_Unbounded_String,
@@ -2823,6 +2833,7 @@ package body Quality_Manager_Test_Suite is
          Global_Remediation => To_Unbounded_String ("remediation:two"),
          Project => Project_2, Origin => Quality_Manager.Model.Campaign,
          Finding_Identities => To_Unbounded_String ("TST-03"), Priority => 150,
+         Baseline_Assessment_Run => 1,
          Improve_Plan_Id => To_Unbounded_String ("plan-2"), Improve_Revision => 1,
          Improve_Task_Id => To_Unbounded_String ("task-2"), Improve_Content_SHA256 => Null_Unbounded_String,
          Planned_Source_Fingerprint => Null_Unbounded_String,
@@ -2971,6 +2982,9 @@ package body Quality_Manager_Test_Suite is
       begin
          if Ada.Directories.Exists (Path) then
             Ada.Directories.Delete_File (Path);
+         end if;
+         if Ada.Directories.Exists ("/tmp/qm-adapter-project-integrated") then
+            Ada.Directories.Delete_File ("/tmp/qm-adapter-project-integrated");
          end if;
       end Cleanup;
    begin
@@ -3140,9 +3154,17 @@ package body Quality_Manager_Test_Suite is
            (Store, To_String (Remediation_Work), Work, Result);
          Assert
            (Result.Kind = Quality_Manager.Results.Success
-            and then Work.State = Quality_Manager.Model.Awaiting_Assessment,
-            "authorized maintenance stops for independent reassessment, got "
+            and then Work.State = Quality_Manager.Model.Verified,
+            "authorized maintenance completes independent verification, got "
             & Quality_Manager.Model.Work_State'Image (Work.State));
+         Quality_Manager.Storage.List
+           (Store, Quality_Manager.Storage.Verification_Record, Values, 10, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then Natural (Values.Length) = 1
+            and then Ada.Strings.Fixed.Index
+              (To_String (Values.First_Element.Payload), """assessment_run"":4") > 0,
+            "maintenance retains exact post-remediation verification evidence");
       end;
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
@@ -3171,6 +3193,7 @@ package body Quality_Manager_Test_Suite is
          Global_Remediation => To_Unbounded_String ("global:coverage"), Project => Project,
          Origin => Quality_Manager.Model.Maintenance,
          Finding_Identities => To_Unbounded_String ("TST-03"), Priority => 150,
+         Baseline_Assessment_Run => 0,
          Improve_Plan_Id => Null_Unbounded_String, Improve_Revision => 0,
          Improve_Task_Id => Null_Unbounded_String, Improve_Content_SHA256 => Null_Unbounded_String,
          Planned_Source_Fingerprint => Null_Unbounded_String,

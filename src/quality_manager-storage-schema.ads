@@ -36,6 +36,7 @@ package Quality_Manager.Storage.Schema is
       Origin              : Quality_Manager.Model.Workflow_Kind;
       Finding_Identities  : Text;
       Priority            : Natural := 0;
+      Baseline_Assessment_Run : Natural := 0;
       Improve_Plan_Id     : Text;
       Improve_Revision    : Natural := 0;
       Improve_Task_Id     : Text;

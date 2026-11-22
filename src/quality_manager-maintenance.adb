@@ -21,6 +21,7 @@ with Quality_Manager.Verification;
 package body Quality_Manager.Maintenance is
    use type Jsonlib.Documents.Value_Kind;
    use type Interfaces.Unsigned_64;
+   use type Quality_Manager.Integrations.Runner.Execution_State;
    use type Quality_Manager.Model.Work_State;
    use type Quality_Manager.Results.Result_Kind;
    use type Quality_Manager.Scheduler.Store_Access;
@@ -57,7 +58,8 @@ package body Quality_Manager.Maintenance is
       Quality   : Quality_Manager.Integrations.Quality.Adapter;
       Planner   : Quality_Manager.Integrations.Improve.Adapter;
       Runner    : Quality_Manager.Integrations.Runner.Adapter;
-      Maximum_Task_Seconds : Positive := 3_600) is
+      Maximum_Task_Seconds : Positive := 3_600;
+      Maximum_Attempts : Positive := 2) is
    begin
       Item.Database := Store;
       Item.Queue := Scheduler_Access (Scheduler);
@@ -65,6 +67,7 @@ package body Quality_Manager.Maintenance is
       Item.Planner := Planner;
       Item.Runner := Runner;
       Item.Maximum_Task_Seconds := Maximum_Task_Seconds;
+      Item.Maximum_Attempts := Maximum_Attempts;
    end Initialize;
 
    function Natural_Field
@@ -727,6 +730,135 @@ package body Quality_Manager.Maintenance is
       Result := Make_Result (Success);
    end Execute_Queued_Remediations;
 
+   procedure Verify_Awaiting_Remediations
+     (Item             : in out Context;
+      Project_Selector : String;
+      Result           : out Operation_Result) is
+      Values   : Quality_Manager.Storage.Entity_Vectors.Vector;
+      Work     : Quality_Manager.Storage.Schema.Work_Item;
+      Mapping  : Quality_Manager.Storage.Schema.Dispatch;
+      Native   : Quality_Manager.Integrations.Runner.Task_Snapshot;
+      Response : Quality_Manager.Integrations.JSON_CLI.Response;
+      Plan     : Assessment_Plan;
+      Decision : Quality_Manager.Verification.Verification_Decision;
+      Request  : Quality_Manager.Verification.Remediation_Request;
+      Local    : Operation_Result;
+      Execution_Operation : Quality_Manager.Identities.Operation_Id;
+   begin
+      Result := Make_Result (Success);
+      Quality_Manager.Storage.List
+        (Item.Database.all, Quality_Manager.Storage.Work_Item_Record, Values, 100_000, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      for Stored of Values loop
+         if To_String (Stored.State) = Quality_Manager.Model.Awaiting_Assessment'Image then
+            Quality_Manager.Storage.Decoding.Read_Work
+              (Item.Database.all, To_String (Stored.Entity_Key), Work, Result);
+            if Result.Kind /= Success then
+               return;
+            elsif not Selected
+              (Project_Selector, Work.Project.Quality_Project_Id,
+               To_String (Work.Project.Canonical_Path))
+            then
+               null;
+            elsif Work.Baseline_Assessment_Run = 0 then
+               Quality_Manager.Storage.Transition_Work
+                 (Item.Database.all, To_String (Work.Work_Id), Work.State,
+                  Quality_Manager.Model.Needs_Intervention,
+                  "event:" & To_String (Work.Work_Id) & ":verify:baseline-missing",
+                  "verification baseline is unavailable", "", Result);
+               if Result.Kind /= Success then
+                  return;
+               end if;
+            else
+               Quality_Manager.Storage.Decoding.Read_Active_Dispatch
+                 (Item.Database.all, To_String (Work.Global_Remediation), Mapping, Result);
+               if Result.Kind /= Success then
+                  return;
+               end if;
+               Execution_Operation := Quality_Manager.Identities.Operation_Identity
+                 ("model-runner-execution", To_String (Mapping.Dispatch_Id));
+               Quality_Manager.Integrations.Runner.Status
+                 (Item.Runner, To_String (Work.Project.Canonical_Path),
+                  Quality_Manager.Dispatch.Operation_Name (Execution_Operation), Response);
+               Quality_Manager.Integrations.Runner.Decode_Snapshot (Response, Native, Result);
+               if Result.Kind /= Success then
+                  return;
+               elsif Native.Operation_Id /= To_Unbounded_String
+                 (Quality_Manager.Dispatch.Operation_Name (Execution_Operation))
+                 or else Native.Task_Id /= Mapping.Native_Task_Id
+                 or else Native.State /= Quality_Manager.Integrations.Runner.Completed_State
+                 or else To_String (Native.Workspace_State) /= "integrated"
+                 or else Length (Native.Source_Fingerprint) = 0
+               then
+                  Result := Make_Result
+                    (Integrity_Error, "integrated native evidence is incomplete or mismatched",
+                     "qm.maintenance.native-verification");
+                  return;
+               end if;
+               Quality_Manager.Integrations.Quality.Plan_Check
+                 (Item.Quality,
+                  Ada.Strings.Fixed.Trim
+                    (Positive'Image (Work.Project.Quality_Project_Id), Ada.Strings.Both),
+                  "", False, Response);
+               Decode_Plan (Response, Work.Project, Plan, Result);
+               if Result.Kind /= Success then
+                  return;
+               elsif Plan.Source_Fingerprint /= Native.Source_Fingerprint
+                 or else Plan.Policy_Fingerprint /= Work.Effective_Policy_Digest
+               then
+                  Result := Make_Result
+                    (Stale_Evidence, "integrated source or policy changed before verification",
+                     "qm.maintenance.verification-drift");
+                  return;
+               end if;
+               Request :=
+                 (Work_Id => Work.Work_Id,
+                  Project => Work.Project,
+                  Project_Selector => To_Unbounded_String
+                    (Ada.Strings.Fixed.Trim
+                       (Positive'Image (Work.Project.Quality_Project_Id), Ada.Strings.Both)),
+                  Profile => Null_Unbounded_String,
+                  Candidate_Revision => Native.Source_Fingerprint,
+                  Candidate_Source => Native.Source_Fingerprint,
+                  Policy_Fingerprint => Plan.Policy_Fingerprint,
+                  Toolchain_Fingerprint => Plan.Toolchain_Fingerprint,
+                  Baseline_Assessment => Positive (Work.Baseline_Assessment_Run),
+                  Improve_Plan_Id => Work.Improve_Plan_Id,
+                  Improve_Plan_Revision => Positive (Work.Improve_Revision),
+                  Improve_Task_Id => Work.Improve_Task_Id,
+                  Contract_Digest => To_Unbounded_String
+                    (Quality_Manager.Identities.Canonical_Digest
+                       ([Quality_Manager.Identities.Text_Value (To_String (Mapping.Dispatch_Id)),
+                         Quality_Manager.Identities.Text_Value (To_String (Native.Source_Fingerprint)),
+                         Quality_Manager.Identities.Text_Value (To_String (Plan.Policy_Fingerprint)),
+                         Quality_Manager.Identities.Text_Value (To_String (Plan.Toolchain_Fingerprint)),
+                         Quality_Manager.Identities.Number_Value
+                           (Interfaces.Unsigned_64 (Work.Baseline_Assessment_Run))])),
+                  Assessment_Operation => Quality_Manager.Identities.Operation_Identity
+                    ("post-remediation-assessment", To_String (Work.Work_Id)),
+                  Improve_Operation => Quality_Manager.Identities.Operation_Identity
+                    ("post-remediation-verification", To_String (Work.Work_Id)),
+                  Attempts_Used => 1,
+                  Maximum_Attempts => Item.Maximum_Attempts);
+               Quality_Manager.Verification.Verify_Remediation
+                 (Item.Database.all, Item.Quality, Item.Planner, Native, Request, Decision, Local);
+               if Local.Kind not in Success | Negative_Result then
+                  Result := Local;
+                  return;
+               end if;
+            end if;
+         end if;
+      end loop;
+      Result := Make_Result (Success);
+   exception
+      when Constraint_Error =>
+         Result := Make_Result
+           (Integrity_Error, "persisted verification identity is out of range",
+            "qm.maintenance.verification-range");
+   end Verify_Awaiting_Remediations;
+
    procedure Reconcile_Authorized_Work
      (Item             : in out Context;
       Project_Selector : String;
@@ -750,6 +882,9 @@ package body Quality_Manager.Maintenance is
       end if;
       if Result.Kind = Success then
          Execute_Queued_Remediations (Item, Now, Result);
+      end if;
+      if Result.Kind = Success then
+         Verify_Awaiting_Remediations (Item, Project_Selector, Result);
       end if;
    end Reconcile_Authorized_Work;
 
@@ -865,6 +1000,7 @@ package body Quality_Manager.Maintenance is
                               Global_Remediation => To_Unbounded_String ("assessment:" & Cycle_Id),
                               Project => Project, Origin => Quality_Manager.Model.Maintenance,
                               Finding_Identities => To_Unbounded_String ("__assessment__"), Priority => 250,
+                              Baseline_Assessment_Run => 0,
                               Improve_Plan_Id => Null_Unbounded_String, Improve_Revision => 0,
                               Improve_Task_Id => Null_Unbounded_String,
                               Improve_Content_SHA256 => Null_Unbounded_String,
@@ -957,7 +1093,7 @@ package body Quality_Manager.Maintenance is
            (Runner, To_String (Settings.Model_Runner_Executable));
          Initialize
            (Item, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality, Planner, Runner,
-            Settings.Maximum_Task_Seconds);
+            Settings.Maximum_Task_Seconds, Settings.Remediation_Attempts);
          Run_Cycle (Item, Project_Selector, Dry_Run or else Settings.Dry_Run, Result);
       end if;
       Quality_Manager.Scheduler.Shutdown (Scheduler);
