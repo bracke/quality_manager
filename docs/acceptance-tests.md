@@ -48,4 +48,8 @@ invoke inference twice. Final multi-project maintenance, campaign, and release
 qualification runs remain release-gate activities: they require configured
 real project inventory, current authorization records, and model credentials.
 Simulated adapter results are not accepted as substitutes for those three
-records.
+records. The only local Ada Quality inventory found during stabilization was a
+legacy schema-3 database whose supported migration rejected a noncanonical
+measurement; its original bytes were restored. Real-system execution therefore
+requires a valid schema-6 inventory rather than an unsupported repair of that
+historical database.

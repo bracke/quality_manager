@@ -262,3 +262,8 @@ native replay, policy drift, campaign contract errors, and scheduler resource ac
 negotiates the pinned model_runner headless contract successfully. Release status remains **blocked** until P11-06
 through P11-10 are completed with archived real-system evidence; fixture-backed acceptance tests do not replace those
 records.
+
+The available `ada_quality/.ada-quality.db` cannot supply those records: it is legacy schema 3 and Ada Quality's own
+schema-6 migration/integrity check rejects a noncanonical measurement. The attempted migration was rolled back by
+restoring a byte-identical pre-migration copy. A valid schema-6 multi-project inventory is therefore an explicit
+release-environment prerequisite, not a condition the coordinator may silently repair.
