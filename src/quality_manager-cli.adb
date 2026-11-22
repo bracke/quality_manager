@@ -15,6 +15,8 @@ package body Quality_Manager.CLI is
       & "            continuously schedule maintenance work" & ASCII.LF
       & "  status | queue | approvals | history | events | recover" & ASCII.LF
       & "            inspect durable coordinator state" & ASCII.LF
+      & "  reconcile-assessment OPERATION RUN" & ASCII.LF
+      & "            adopt a confirmed assessment after interrupted invocation" & ASCII.LF
       & "  campaign-create DEFINITION" & ASCII.LF
       & "  campaign-start|campaign-pause|campaign-resume|campaign-reconcile ID" & ASCII.LF
       & "  release-create PROJECT PROFILE" & ASCII.LF
@@ -171,6 +173,8 @@ package body Quality_Manager.CLI is
                Set_Command (Events_Command);
             elsif Argument = "recover" then
                Set_Command (Recover_Command);
+            elsif Argument = "reconcile-assessment" then
+               Set_Command (Reconcile_Assessment_Command);
             elsif Argument = "campaign-create" then
                Set_Command (Campaign_Create_Command);
             elsif Argument = "campaign-start" then
@@ -214,7 +218,7 @@ package body Quality_Manager.CLI is
                   when Campaign_Create_Command | Campaign_Start_Command | Campaign_Pause_Command
                      | Campaign_Resume_Command | Campaign_Reconcile_Command | Release_Qualify_Command
                      | Approve_Command | Reject_Command => 1,
-                  when Release_Create_Command | Release_Export_Command => 2,
+                  when Release_Create_Command | Release_Export_Command | Reconcile_Assessment_Command => 2,
                   when others => 0);
          begin
             if Value_Count /= Required then

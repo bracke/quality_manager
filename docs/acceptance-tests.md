@@ -17,7 +17,7 @@ unless another repository is named.
 | AT-007 | Existing logical remediation and publication mapping | Bind mapping twice | One active dispatch; one native identity; idempotent success | Delete temp DB |
 | AT-008 | Ready TASK-001 fixture | Execute_Or_Reconcile | Attempt and committed journal; native execution observed; success | Delete temp DB |
 | AT-009 | Non-ready native snapshot | Eligibility/dispatch evaluation | No attempt; no agent start; blocked reason | Delete temp DB |
-| AT-010 | Journal left Invoking | Reopen and reconcile | Existing attempt adopted; status queried, execute not repeated | Delete temp DB |
+| AT-010 | Native or assessment journal left Invoking | Reopen and reconcile | Native status queried or assessment intent validated; operation not repeated | Delete temp DB |
 | AT-011 | Running native operation | Runner cancel | Cancellation response retained; upstream request bounded; interrupted outcome | None |
 | AT-012 | Completed native task, Improve still failing | Verify remediation | Verification record is not successful; native state preserved; unresolved | Delete temp DB |
 | AT-013 | Integrated task, fresh pass, explicit clean comparison | Verify remediation | Append-only verification becomes verified; exact upstream run used | Delete temp DB |

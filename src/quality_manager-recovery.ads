@@ -1,5 +1,7 @@
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
+with Quality_Manager.Identities;
+with Quality_Manager.Integrations.Quality;
 with Quality_Manager.Journal;
 with Quality_Manager.Results;
 with Quality_Manager.Storage;
@@ -19,4 +21,11 @@ package Quality_Manager.Recovery is
       Maximum : Positive;
       Work    : out Recovery_Vectors.Vector;
       Result  : out Quality_Manager.Results.Operation_Result);
+
+   procedure Reconcile_Assessment
+     (Store     : in out Quality_Manager.Storage.Store;
+      Quality   : Quality_Manager.Integrations.Quality.Adapter;
+      Operation : Quality_Manager.Identities.Operation_Id;
+      Run       : Positive;
+      Result    : out Quality_Manager.Results.Operation_Result);
 end Quality_Manager.Recovery;

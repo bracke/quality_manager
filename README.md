@@ -24,6 +24,7 @@ alr -n build
 ./bin/quality-manager daemon --once --dry-run
 ./bin/quality-manager --format json status
 ./bin/quality-manager queue
+./bin/quality-manager recover
 ./bin/quality-manager approvals
 alr test
 ```
@@ -63,8 +64,10 @@ Phase 10 exposes read-only status, queue, approval, history, event, and recovery
 views in terminal, JSON, and Markdown formats. Administrative `approve` and
 `reject` commands import a versioned decision record conforming to
 `schemas/approval-decision-v1.schema.json`; the command and record decision must
-match. Campaign and release lifecycle commands are listed by `quality-manager
-help`. See `docs/quality-manager.1` for the operator reference.
+match. An ambiguous assessment can be adopted only through
+`reconcile-assessment OPERATION RUN`, which verifies the exact persisted intent.
+Campaign and release lifecycle commands are listed by `quality-manager help`.
+See `docs/quality-manager.1` for the operator reference.
 
 Phase 11 stabilization currently passes the 24-test AUnit suite, the
 warnings-as-errors validation build, applicable GNATprove analysis, GNATdoc,

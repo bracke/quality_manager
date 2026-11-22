@@ -3,7 +3,7 @@ _quality_manager()
     local current commands formats
     COMPREPLY=()
     current="${COMP_WORDS[COMP_CWORD]}"
-    commands="doctor maintenance daemon status queue approvals history events recover campaign-create campaign-start campaign-pause campaign-resume campaign-reconcile release-create release-qualify release-export approve reject help version"
+    commands="doctor maintenance daemon status queue approvals history events recover reconcile-assessment campaign-create campaign-start campaign-pause campaign-resume campaign-reconcile release-create release-qualify release-export approve reject help version"
     formats="terminal json markdown"
 
     if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--format" ]]; then

@@ -33,6 +33,9 @@ Ada Quality assessments are treated as non-idempotent after invocation: a commit
 while a crash with no durable run identity moves the journal to Needs intervention instead of repeating the check.
 Exit code 3 is not an ambiguous crash when its versioned JSON contains a completed assessment. The coordinator adopts
 that run identity, commits the journal, and separately records the evidence as incomplete and therefore inconclusive.
+For an older ambiguous invocation, `reconcile-assessment OPERATION RUN` recomputes the complete original intent from
+the work identity and supplied assessment. An exact match is adopted. A confirmed run with different source, policy,
+or toolchain evidence is recorded as an aborted journal operation and blocked work; it is never relabeled as current.
 Improve plan generation is bound to an explicit assessment run. Improve's deterministic storage returns the existing
 plan for the same exact evidence, so replay from `Invoking` is idempotent; reconciliation reloads the recorded plan ID
 and revision before recreating any missing approval-gated coordinator work.

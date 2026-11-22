@@ -237,7 +237,7 @@ check adoption. The final real-project qualification record remains a Phase 11 e
 | P10-02 queue inspection | complete | work, dispatch, and attempt records |
 | P10-03 authorization inspection | complete | append-only approval view |
 | P10-04 approve/reject administration | complete | versioned exact decision import and mismatch rejection |
-| P10-05 recovery/reconciliation | complete | recovery journal view and campaign reconciliation command |
+| P10-05 recovery/reconciliation | complete | journal view, exact assessment adoption, campaign reconciliation |
 | P10-06 workflow history | complete | cycle, campaign, release, and verification history |
 | P10-07 event export | complete | versioned JSON event stream |
 | P10-08 doctor diagnostics | complete | configuration and live model_runner capability negotiation |
@@ -280,5 +280,7 @@ records; successful inventory migration alone does not satisfy those gates.
 
 On 22 November 2026, a live maintenance worker assessed `quality_manager` and Ada Quality persisted assessment 2.
 The run completed with 85 findings but incomplete evidence because coverage and the release checker were unavailable
-and GNATprove failed. The coordinator therefore cannot claim compliance. This validates real assessment dispatch and
-also identifies the release-environment repairs required before the multi-project P11-06 record can pass.
+and GNATprove failed. Source changes made during the long-running check also caused its final source fingerprint to
+differ from the persisted invocation intent. Exact manual reconciliation therefore rejected the run, moved the work
+to `Blocked`, and closed the journal as `Aborted`; the recovery queue is now empty. The coordinator cannot claim
+compliance, and the environment still needs repair before the multi-project P11-06 record can pass.

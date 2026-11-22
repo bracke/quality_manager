@@ -8,9 +8,12 @@ with Quality_Manager.Approvals;
 with Quality_Manager.Campaigns;
 with Quality_Manager.CLI;
 with Quality_Manager.Config;
+with Quality_Manager.Identities;
 with Quality_Manager.Integrations.JSON_CLI;
+with Quality_Manager.Integrations.Quality;
 with Quality_Manager.Integrations.Runner;
 with Quality_Manager.Maintenance;
+with Quality_Manager.Recovery;
 with Quality_Manager.Releases;
 with Quality_Manager.Reporting;
 with Quality_Manager.Results;
@@ -189,6 +192,49 @@ begin
                Report_Failure;
             end if;
          end;
+      when Quality_Manager.CLI.Reconcile_Assessment_Command =>
+         Quality_Manager.Config.Load
+           (To_String (Options.Config_Path), Options.Config_Explicit, Settings, Result);
+         if Result.Kind = Quality_Manager.Results.Success then
+            declare
+               Store        : Quality_Manager.Storage.Store;
+               Quality      : Quality_Manager.Integrations.Quality.Adapter;
+               Close_Result : Quality_Manager.Results.Operation_Result;
+            begin
+               Quality_Manager.Storage.Open
+                 (Store, To_String (Settings.Coordinator_Database), True, Result);
+               if Result.Kind = Quality_Manager.Results.Success then
+                  Quality_Manager.Integrations.Quality.Initialize
+                    (Quality, To_String (Settings.Ada_Quality_Executable),
+                     To_String (Settings.Quality_Database),
+                     Policy_Path => To_String (Settings.Quality_Policy));
+                  begin
+                     Quality_Manager.Recovery.Reconcile_Assessment
+                       (Store, Quality,
+                        Quality_Manager.Identities.Operation_Id'Value
+                          (To_String (Options.Primary_Value)),
+                        Positive'Value (To_String (Options.Secondary_Value)), Result);
+                  exception
+                     when Constraint_Error =>
+                        Result := Quality_Manager.Results.Make_Result
+                          (Quality_Manager.Results.Invalid_Request,
+                           "operation and run must be positive integers",
+                           "qm.cli.reconcile-assessment");
+                  end;
+               end if;
+               if Quality_Manager.Storage.Is_Open (Store) then
+                  Quality_Manager.Storage.Close (Store, Close_Result);
+                  if Result.Kind = Quality_Manager.Results.Success
+                    and then Close_Result.Kind /= Quality_Manager.Results.Success
+                  then
+                     Result := Close_Result;
+                  end if;
+               end if;
+            end;
+         end if;
+         if Result.Kind /= Quality_Manager.Results.Success then
+            Report_Failure;
+         end if;
       when Quality_Manager.CLI.Campaign_Create_Command
          | Quality_Manager.CLI.Campaign_Start_Command
          | Quality_Manager.CLI.Campaign_Pause_Command

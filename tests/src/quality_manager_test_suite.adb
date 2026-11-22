@@ -26,6 +26,7 @@ with Quality_Manager.Maintenance;
 with Quality_Manager.Model;
 with Quality_Manager.Planning;
 with Quality_Manager.Reporting;
+with Quality_Manager.Recovery;
 with Quality_Manager.Releases;
 with Quality_Manager.Results;
 with Quality_Manager.Scheduler;
@@ -271,6 +272,18 @@ package body Quality_Manager_Test_Suite is
          and then To_String (Options.Primary_Value) = "7"
          and then To_String (Options.Secondary_Value) = "release",
          "release creation retains its exact operands");
+
+      Args.Clear;
+      Args.Append ("reconcile-assessment");
+      Args.Append ("123");
+      Args.Append ("4");
+      Quality_Manager.CLI.Parse (Args, Options, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Options.Command = Quality_Manager.CLI.Reconcile_Assessment_Command
+         and then To_String (Options.Primary_Value) = "123"
+         and then To_String (Options.Secondary_Value) = "4",
+         "assessment reconciliation retains operation and run identities");
 
       Args.Clear;
       Args.Append ("campaign-start");
@@ -665,6 +678,8 @@ package body Quality_Manager_Test_Suite is
         (Run (Args ("--config", Config_Path, "release-create", "missing", "release"), 1));
       Output := To_Unbounded_String
         (Run (Args ("--config", Config_Path, "maintenance", "--project", "missing"), 1));
+      Output := To_Unbounded_String
+        (Run (Args ("--config", Config_Path, "reconcile-assessment", "not-an-operation", "2"), 1));
       Output := To_Unbounded_String
         (Run (Args ("--config", Config_Path, "approve", "/tmp/no-such-decision.json"), 1));
       Output := To_Unbounded_String
@@ -2490,6 +2505,105 @@ package body Quality_Manager_Test_Suite is
             and then To_String (Loaded.State) = Quality_Manager.Journal.Journal_State'Image
               (Quality_Manager.Journal.Needs_Intervention),
             "ambiguous assessment recovery is durably escalated");
+      end;
+
+      declare
+         Manual_Work : Quality_Manager.Storage.Schema.Work_Item := Work;
+         Work_Id     : constant String := "work:manual-assessment";
+         Operation   : constant Quality_Manager.Identities.Operation_Id :=
+           Quality_Manager.Identities.Operation_Identity ("maintenance-assessment", Work_Id);
+         Intent      : constant String := Quality_Manager.Identities.Canonical_Digest
+           ([Quality_Manager.Identities.Text_Value ("authoritative-assessment-v1"),
+             Quality_Manager.Identities.Text_Value (Work_Id),
+             Quality_Manager.Identities.Text_Value (To_String (Project.Quality_Database_Id)),
+             Quality_Manager.Identities.Number_Value
+               (Interfaces.Unsigned_64 (Project.Quality_Project_Id)),
+             Quality_Manager.Identities.Text_Value (To_String (Project.Canonical_Path)),
+             Quality_Manager.Identities.Text_Value ("7"),
+             Quality_Manager.Identities.Text_Value ("candidate-source"),
+             Quality_Manager.Identities.Text_Value ("policy"),
+             Quality_Manager.Identities.Text_Value ("toolchain"),
+             Quality_Manager.Identities.Text_Value ("")]);
+      begin
+         Manual_Work.Work_Id := To_Unbounded_String (Work_Id);
+         Manual_Work.Global_Remediation := To_Unbounded_String ("assessment:manual");
+         Manual_Work.Finding_Identities := To_Unbounded_String ("__assessment__");
+         Manual_Work.Improve_Plan_Id := Null_Unbounded_String;
+         Manual_Work.Improve_Revision := 0;
+         Manual_Work.Improve_Task_Id := Null_Unbounded_String;
+         Manual_Work.State := Quality_Manager.Model.Needs_Intervention;
+         Manual_Work.Outcome := Quality_Manager.Model.Evidence_Unavailable;
+         Quality_Manager.Storage.Records.Save (Store, Manual_Work, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "manual recovery work persisted");
+         Quality_Manager.Storage.Prepare_Operation
+           (Store, Operation, "authoritative-assessment", Intent, "assessment:pending", Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "manual recovery intent persisted");
+         Quality_Manager.Storage.Advance_Operation
+           (Store, Operation, Quality_Manager.Journal.Prepared, Quality_Manager.Journal.Invoking,
+            "assessment:pending", "", Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "manual recovery invocation persisted");
+         Quality_Manager.Recovery.Reconcile_Assessment
+           (Store, Quality, Operation, 2, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "exact completed assessment is reconciled");
+         Quality_Manager.Storage.Read (Store, "journal:" &
+           Ada.Strings.Fixed.Trim
+             (Interfaces.Unsigned_64'Image (Interfaces.Unsigned_64 (Operation)), Ada.Strings.Both),
+           Loaded, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then To_String (Loaded.State) = Quality_Manager.Journal.Journal_State'Image
+              (Quality_Manager.Journal.Committed),
+            "manual reconciliation commits the interrupted assessment journal");
+         Quality_Manager.Storage.Read (Store, Work_Id, Loaded, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then To_String (Loaded.State) = Quality_Manager.Model.Work_State'Image
+              (Quality_Manager.Model.Verified),
+            "complete reconciled evidence finishes assessment work");
+         Quality_Manager.Recovery.Reconcile_Assessment
+           (Store, Quality, Operation, 2, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "assessment reconciliation replay is idempotent");
+      end;
+
+      declare
+         Rejected_Work : Quality_Manager.Storage.Schema.Work_Item := Work;
+         Work_Id       : constant String := "work:rejected-assessment";
+         Operation     : constant Quality_Manager.Identities.Operation_Id :=
+           Quality_Manager.Identities.Operation_Identity ("maintenance-assessment", Work_Id);
+      begin
+         Rejected_Work.Work_Id := To_Unbounded_String (Work_Id);
+         Rejected_Work.Global_Remediation := To_Unbounded_String ("assessment:rejected");
+         Rejected_Work.Finding_Identities := To_Unbounded_String ("__assessment__");
+         Rejected_Work.Improve_Plan_Id := Null_Unbounded_String;
+         Rejected_Work.Improve_Revision := 0;
+         Rejected_Work.Improve_Task_Id := Null_Unbounded_String;
+         Rejected_Work.State := Quality_Manager.Model.Needs_Intervention;
+         Quality_Manager.Storage.Records.Save (Store, Rejected_Work, Result);
+         Quality_Manager.Storage.Prepare_Operation
+           (Store, Operation, "authoritative-assessment", "different-intent", "assessment:pending", Result);
+         Quality_Manager.Storage.Advance_Operation
+           (Store, Operation, Quality_Manager.Journal.Prepared, Quality_Manager.Journal.Invoking,
+            "assessment:pending", "", Result);
+         Quality_Manager.Recovery.Reconcile_Assessment
+           (Store, Quality, Operation, 2, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Negative_Result,
+            "observed assessment with mismatched intent is explicitly rejected");
+         Quality_Manager.Storage.Read (Store, Work_Id, Loaded, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then To_String (Loaded.State) = Quality_Manager.Model.Work_State'Image
+              (Quality_Manager.Model.Blocked),
+            "intent-mismatched assessment work is durably blocked");
+         Quality_Manager.Storage.Read
+           (Store, "journal:" & Ada.Strings.Fixed.Trim
+              (Interfaces.Unsigned_64'Image (Interfaces.Unsigned_64 (Operation)), Ada.Strings.Both),
+            Loaded, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success
+            and then To_String (Loaded.State) = Quality_Manager.Journal.Journal_State'Image
+              (Quality_Manager.Journal.Aborted),
+            "intent-mismatched assessment journal preserves a terminal rejection");
       end;
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;

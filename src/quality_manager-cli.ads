@@ -18,6 +18,7 @@ package Quality_Manager.CLI is
       History_Command,
       Events_Command,
       Recover_Command,
+      Reconcile_Assessment_Command,
       Campaign_Create_Command,
       Campaign_Start_Command,
       Campaign_Pause_Command,

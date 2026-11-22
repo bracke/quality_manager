@@ -19,6 +19,11 @@ Validate configuration and negotiate the model_runner headless contract.
 Read durable coordinator state. JSON output uses schema version 1. The recover
 view reports journal state for manual reconciliation; it does not blindly repeat
 an ambiguous external operation.
+.TP
+.B reconcile-assessment OPERATION RUN
+Adopt a confirmed completed Ada Quality run after an interrupted assessment.
+The command recomputes and validates the original invocation intent before it
+commits the journal or advances work state.
 .SH WORKFLOW COMMANDS
 .TP
 .B maintenance [--project ID|PATH] [--dry-run]
