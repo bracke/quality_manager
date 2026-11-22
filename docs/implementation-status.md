@@ -301,6 +301,13 @@ plan. Quality Manager adopted assessment 10 and classified it `Inconclusive` onl
 release checker remain unavailable. P11-06 now has a genuine multi-project execution record, but it remains incomplete
 until those measurement gaps and assessment 7 are resolved.
 
+Two isolated retries reproduced the `improve` interruption as assessments 11 and 12. The supported Ada Quality CLI
+reported the exact cause: `improve/alire.toml` contains development pins to sibling directories, and those paths would
+escape Ada Quality's isolated staging container. The pin-free `improve/alire.release.toml` is intentionally a distinct
+publication manifest whose dependencies are not yet available from the configured indexes. Quality Manager therefore
+keeps this project at `Needs_Intervention`; it must not weaken workspace isolation or silently substitute a different
+manifest to make the assessment pass.
+
 Journaled authorized publication is implemented. It requires a durable coordinator approval matching project, plan
 revision, complete content fingerprint, action, policy, and lifetime; confirms Improve's atomic approval; preflights
 and publishes the exact revision; persists the authoritative native task mapping; and safely replays both external
