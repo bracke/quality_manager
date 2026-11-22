@@ -1836,6 +1836,24 @@ package body Quality_Manager_Test_Suite is
       Assert
         (Result.Kind = Quality_Manager.Results.Not_Ready,
          "completed native execution cannot be dispatched twice");
+      Quality_Manager.Dispatch.Integrate_Persisted
+        (Store, Runner, "work:publication", "coordinator:publication", 60, 120,
+         Snapshot, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Snapshot.Workspace_State) = "integrated",
+         "persisted native workspace is integrated through model_runner");
+      Quality_Manager.Storage.Read (Store, "work:publication", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Loaded.State) = Quality_Manager.Model.Awaiting_Assessment'Image,
+         "integrated remediation requires fresh independent assessment");
+      Quality_Manager.Dispatch.Integrate_Persisted
+        (Store, Runner, "work:publication", "coordinator:publication", 70, 130,
+         Snapshot, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Not_Ready,
+         "integrated workspace cannot be taken in twice");
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
@@ -3122,8 +3140,8 @@ package body Quality_Manager_Test_Suite is
            (Store, To_String (Remediation_Work), Work, Result);
          Assert
            (Result.Kind = Quality_Manager.Results.Success
-            and then Work.State = Quality_Manager.Model.Awaiting_Integration,
-            "authorized maintenance stops at independent native integration, got "
+            and then Work.State = Quality_Manager.Model.Awaiting_Assessment,
+            "authorized maintenance stops for independent reassessment, got "
             & Quality_Manager.Model.Work_State'Image (Work.State));
       end;
       Quality_Manager.Storage.Close (Store, Result);

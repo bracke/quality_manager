@@ -229,6 +229,12 @@ begin
                       elsif Is_Inspect then "candidate-source"
                       elsif Option_Value (Text, "expected-source-fingerprint") /= ""
                       then Option_Value (Text, "expected-source-fingerprint")
+                      elsif Operation not in "qm-execution-1" | "qm-execution-2" |
+                                              "qm-execution-3" | "qm-execution-4" |
+                                              "qm-execution-5" | "qm-execution-6" |
+                                              "qm-execution-7" | "qm-execution-8" |
+                                              "qm-execution-9"
+                      then "candidate-source"
                       else "source-fingerprint") &
                      """,""task_id"":""TASK-001""," &
                      """task_revision"":""task-revision"",""effective_task_revision"":""effective-revision""," &

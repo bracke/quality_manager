@@ -1284,4 +1284,180 @@ package body Quality_Manager.Dispatch is
       end if;
       Result := Make_Result (Success);
    end Integrate_Or_Reconcile;
+
+   procedure Integrate_Persisted
+     (Store            : in out Quality_Manager.Storage.Store;
+      Runner           : Quality_Manager.Integrations.Runner.Adapter;
+      Work_Id          : String;
+      Lease_Owner      : String;
+      Now              : Interfaces.Unsigned_64;
+      Lease_Expires_At : Interfaces.Unsigned_64;
+      Snapshot         : out Quality_Manager.Integrations.Runner.Task_Snapshot;
+      Result           : out Operation_Result) is
+      Work        : Quality_Manager.Storage.Schema.Work_Item;
+      Mapping     : Quality_Manager.Storage.Schema.Dispatch;
+      Execution   : Quality_Manager.Integrations.Runner.Task_Snapshot;
+      Response    : Quality_Manager.Integrations.JSON_CLI.Response;
+      Execution_Operation : Quality_Manager.Identities.Operation_Id;
+      Journal_Operation   : Quality_Manager.Identities.Operation_Id;
+      Request     : Quality_Manager.Integrations.Runner.Execution_Request;
+      Lease       : Quality_Manager.Storage.Stored_Entity;
+      Expected    : Interfaces.Unsigned_64 := 0;
+      Resource    : Unbounded_String;
+
+      function Lease_Available return Boolean is
+         Expires : Interfaces.Unsigned_64;
+      begin
+         Quality_Manager.Storage.Read
+           (Store, "lease:" & To_String (Resource), Lease, Result);
+         if Result.Kind = Not_Found then
+            Result := Make_Result (Success);
+            Expected := 0;
+            return True;
+         elsif Result.Kind /= Success then
+            return False;
+         elsif Lease.Kind /= Quality_Manager.Storage.Lease_Record then
+            Result := Make_Result
+              (Integrity_Error, "project integration lease has the wrong record kind",
+               "qm.integration.lease-kind");
+            return False;
+         end if;
+         Expected := Lease.Generation;
+         Expires := Interfaces.Unsigned_64'Value
+           (Ada.Strings.Fixed.Trim (To_String (Lease.Payload), Ada.Strings.Both));
+         if To_String (Lease.State) /= Lease_Owner and then Expires > Now then
+            Result := Make_Result
+              (Not_Ready, "another coordinator owns the project integration lease",
+               "qm.integration.lease-owned");
+            return False;
+         end if;
+         Result := Make_Result (Success);
+         return True;
+      exception
+         when Constraint_Error =>
+            Result := Make_Result
+              (Integrity_Error, "project integration lease is malformed", "qm.integration.lease-value");
+            return False;
+      end Lease_Available;
+   begin
+      Snapshot := (others => <>);
+      if Work_Id = "" or else Lease_Owner = "" or else Lease_Expires_At <= Now then
+         Result := Make_Result
+           (Invalid_Request, "persisted integration coordination is incomplete",
+            "qm.integration.persisted-identity");
+         return;
+      end if;
+      Quality_Manager.Storage.Decoding.Read_Work (Store, Work_Id, Work, Result);
+      if Result.Kind /= Success then
+         return;
+      elsif Work.State /= Quality_Manager.Model.Awaiting_Integration then
+         Result := Make_Result
+           (Not_Ready, "persisted remediation is not awaiting integration",
+            "qm.integration.persisted-state");
+         return;
+      end if;
+      Quality_Manager.Storage.Decoding.Read_Active_Dispatch
+        (Store, To_String (Work.Global_Remediation), Mapping, Result);
+      if Result.Kind /= Success then
+         return;
+      elsif Mapping.Work_Id /= Work.Work_Id
+        or else Mapping.Improve_Task.Plan_Id /= Work.Improve_Plan_Id
+        or else Natural (Mapping.Improve_Task.Revision) /= Work.Improve_Revision
+        or else Mapping.Improve_Task.Task_Id /= Work.Improve_Task_Id
+      then
+         Result := Make_Result
+           (Integrity_Error, "integration dispatch does not match persisted remediation",
+            "qm.integration.mapping-drift");
+         return;
+      end if;
+
+      Execution_Operation := Quality_Manager.Identities.Operation_Identity
+        ("model-runner-execution", To_String (Mapping.Dispatch_Id));
+      Quality_Manager.Integrations.Runner.Status
+        (Runner, To_String (Work.Project.Canonical_Path), Operation_Name (Execution_Operation), Response);
+      Quality_Manager.Integrations.Runner.Decode_Snapshot (Response, Execution, Result);
+      if Result.Kind /= Success then
+         return;
+      elsif Execution.Operation_Id /= To_Unbounded_String (Operation_Name (Execution_Operation))
+        or else Execution.Task_Id /= Mapping.Native_Task_Id
+      then
+         Result := Make_Result
+           (Integrity_Error, "native execution provenance changed before integration",
+            "qm.integration.execution-drift");
+         return;
+      elsif To_String (Execution.Workspace_State) /= "integrated"
+        and then Execution.Source_Fingerprint /= Work.Planned_Source_Fingerprint
+      then
+         Result := Make_Result
+           (Stale_Evidence, "native execution source no longer matches its plan",
+            "qm.integration.source-drift");
+         return;
+      elsif not
+        ((Execution.State = Quality_Manager.Integrations.Runner.Awaiting_Integration_State
+          and then To_String (Execution.Workspace_State) = "active")
+         or else
+         (Execution.State in Quality_Manager.Integrations.Runner.Verifying_State |
+                             Quality_Manager.Integrations.Runner.Completed_State
+          and then To_String (Execution.Workspace_State) = "integrated"))
+      then
+         Result := Make_Result
+           (Not_Ready, "native execution has no recoverable workspace integration state",
+            "qm.integration.workspace-not-ready");
+         return;
+      end if;
+
+      Request :=
+        (Project_Path => Work.Project.Canonical_Path,
+         Task_Id => Mapping.Native_Task_Id,
+         Operation_Id => To_Unbounded_String (Operation_Name (Execution_Operation)),
+         Expected_Task_Revision => Execution.Task_Revision,
+         Expected_Project_Identity => Execution.Project_Identity,
+         Expected_Source_Fingerprint => Work.Planned_Source_Fingerprint,
+         Execution_Policy => Execution.Execution_Policy,
+         Timeout_Seconds => 3_600);
+      Journal_Operation := Quality_Manager.Identities.Operation_Identity
+        ("model-runner-integration", To_String (Mapping.Dispatch_Id));
+      Resource := To_Unbounded_String
+        ("project-integration:"
+         & Quality_Manager.Identities.Canonical_Digest
+             ([Quality_Manager.Identities.Text_Value
+                 (To_String (Work.Project.Quality_Database_Id)),
+               Quality_Manager.Identities.Number_Value
+                 (Interfaces.Unsigned_64 (Work.Project.Quality_Project_Id)),
+               Quality_Manager.Identities.Text_Value
+                 (To_String (Work.Project.Canonical_Path))]));
+      if not Lease_Available then
+         return;
+      elsif Expected = Interfaces.Unsigned_64'Last then
+         Result := Make_Result
+           (Integrity_Error, "project integration lease generation is exhausted",
+            "qm.integration.lease-generation");
+         return;
+      end if;
+      Integrate_Or_Reconcile
+        (Store, Runner, Journal_Operation, To_String (Resource), Lease_Owner,
+         Expected, Expected + 1, Lease_Expires_At, Request, Snapshot, Result);
+      if Result.Kind = Success then
+         if Length (Snapshot.Source_Fingerprint) = 0
+           or else To_String (Snapshot.Workspace_State) /= "integrated"
+         then
+            Result := Make_Result
+              (Integrity_Error, "native integration returned incomplete source evidence",
+               "qm.integration.result");
+            return;
+         end if;
+         Quality_Manager.Storage.Transition_Work
+           (Store, Work_Id, Quality_Manager.Model.Awaiting_Integration,
+            Quality_Manager.Model.Awaiting_Assessment,
+            "event:" & Work_Id & ":native:integrated",
+            "model_runner integrated the isolated workspace",
+            To_String (Snapshot.Source_Fingerprint), Result);
+      end if;
+   exception
+      when Constraint_Error =>
+         Snapshot := (others => <>);
+         Result := Make_Result
+           (Integrity_Error, "persisted integration identity is out of range",
+            "qm.integration.persisted-range");
+   end Integrate_Persisted;
 end Quality_Manager.Dispatch;

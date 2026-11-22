@@ -299,5 +299,11 @@ lease. Source drift is rejected before execution, and a completed isolated task 
 Maintenance now discovers exact durable approvals, rejects approvals that are premature or expired, confirms Improve's
 atomic approval and publication contracts, persists native readiness as `Queued`, and reserves an agent scheduler slot
 before execution. Restart reconstruction includes queued and executing remediation. One project's unavailable approval
-or native readiness does not prevent unrelated projects from progressing. Automatic native workspace integration,
-fresh reassessment, and independent Improve verification remain the next coordination slice.
+or native readiness does not prevent unrelated projects from progressing.
+
+Completed isolated remediation is now reconstructed from its active dispatch and deterministic execution operation,
+then scheduled under the separate per-project integration resource. The coordinator queries the authoritative native
+execution, validates task, source, project, revision, and policy provenance, and invokes only model_runner's controlled
+integration operation. Integration has its own fenced lease and recovery journal. A confirmed integrated source moves
+to `Awaiting_Assessment`; replay cannot integrate it twice. Fresh reassessment and independent Improve verification
+remain the next coordination slice.

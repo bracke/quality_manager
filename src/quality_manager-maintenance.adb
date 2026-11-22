@@ -584,7 +584,8 @@ package body Quality_Manager.Maintenance is
          if To_String (Stored.State) in Quality_Manager.Model.Awaiting_Approval'Image |
                                         Quality_Manager.Model.Published'Image |
                                         Quality_Manager.Model.Queued'Image |
-                                        Quality_Manager.Model.Executing'Image
+                                        Quality_Manager.Model.Executing'Image |
+                                        Quality_Manager.Model.Awaiting_Integration'Image
          then
             Quality_Manager.Storage.Decoding.Read_Work
               (Item.Database.all, To_String (Stored.Entity_Key), Work, Local);
@@ -626,14 +627,19 @@ package body Quality_Manager.Maintenance is
                   if Result.Kind /= Success then
                      return;
                   end if;
-               elsif Work.State = Quality_Manager.Model.Executing then
+               elsif Work.State in Quality_Manager.Model.Executing |
+                                        Quality_Manager.Model.Awaiting_Integration
+               then
                   Quality_Manager.Scheduler.Enqueue_Work
                     (Item.Queue.all, To_String (Work.Work_Id),
                      "quality-project:" & To_String (Work.Project.Quality_Database_Id) & ":"
                      & Ada.Strings.Fixed.Trim
                          (Positive'Image (Work.Project.Quality_Project_Id), Ada.Strings.Both),
                      Quality_Manager.Priorities.From_Persisted_Priority (Work.Priority),
-                     Stored.Generation, Quality_Manager.Scheduler.Agent_Resource);
+                     Stored.Generation,
+                     (if Work.State = Quality_Manager.Model.Awaiting_Integration
+                      then Quality_Manager.Scheduler.Integration_Resource
+                      else Quality_Manager.Scheduler.Agent_Resource));
                   Local := Quality_Manager.Scheduler.Last_Result (Item.Queue.all);
                   if Local.Kind /= Success then
                      Result := Local;
@@ -669,16 +675,25 @@ package body Quality_Manager.Maintenance is
       loop
          Quality_Manager.Scheduler.Take_Next (Item.Queue.all, Work_Id, Resource, Found);
          exit when not Found;
-         if Resource /= Quality_Manager.Scheduler.Agent_Resource then
+         if Resource not in Quality_Manager.Scheduler.Agent_Resource |
+                            Quality_Manager.Scheduler.Integration_Resource
+         then
             Quality_Manager.Scheduler.Complete (Item.Queue.all, To_String (Work_Id));
             Result := Make_Result
               (Integrity_Error, "remediation selected a non-agent resource", "qm.maintenance.agent-resource");
             return;
          end if;
-         Quality_Manager.Dispatch.Execute_Persisted
-           (Item.Database.all, Item.Runner, To_String (Work_Id),
-            "coordinator:" & Quality_Manager.Storage.Identity (Item.Database.all),
-            Now, Expires, Item.Maximum_Task_Seconds, Snapshot, Local);
+         if Resource = Quality_Manager.Scheduler.Agent_Resource then
+            Quality_Manager.Dispatch.Execute_Persisted
+              (Item.Database.all, Item.Runner, To_String (Work_Id),
+               "coordinator:" & Quality_Manager.Storage.Identity (Item.Database.all),
+               Now, Expires, Item.Maximum_Task_Seconds, Snapshot, Local);
+         else
+            Quality_Manager.Dispatch.Integrate_Persisted
+              (Item.Database.all, Item.Runner, To_String (Work_Id),
+               "coordinator:" & Quality_Manager.Storage.Identity (Item.Database.all),
+               Now, Expires, Snapshot, Local);
+         end if;
          Quality_Manager.Scheduler.Complete (Item.Queue.all, To_String (Work_Id));
          if Local.Kind not in Success | Not_Ready | Temporarily_Unavailable then
             declare
@@ -688,7 +703,9 @@ package body Quality_Manager.Maintenance is
                  (Item.Database.all, To_String (Work_Id), Work, Result);
                if Result.Kind /= Success then
                   return;
-               elsif Work.State = Quality_Manager.Model.Executing then
+               elsif Work.State in Quality_Manager.Model.Executing |
+                                        Quality_Manager.Model.Awaiting_Integration
+               then
                   Stop_Work : declare
                      Target : constant Quality_Manager.Model.Work_State :=
                        (if Local.Kind in Authorization_Required | Integrity_Error | Incompatible_Contract
@@ -722,6 +739,15 @@ package body Quality_Manager.Maintenance is
          return;
       end if;
       Reconcile_Authorized_Remediations (Item, Project_Selector, Now, Result);
+      if Result.Kind = Success then
+         Execute_Queued_Remediations (Item, Now, Result);
+      end if;
+      if Result.Kind = Success then
+         --  A completed agent execution becomes integration work. Rebuild
+         --  from durable state so the integration uses its own serialized
+         --  scheduler resource and lease.
+         Reconcile_Authorized_Remediations (Item, Project_Selector, Now, Result);
+      end if;
       if Result.Kind = Success then
          Execute_Queued_Remediations (Item, Now, Result);
       end if;
