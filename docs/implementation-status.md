@@ -256,7 +256,7 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | Task | State | Evidence |
 | --- | --- | --- |
 | P11-01 complete AUnit suites | complete | 25/25 tests pass, including executable CLI acceptance |
-| P11-02 90% production coverage | blocked | 6,201/7,096 production body lines, 87.3873%; full implemented scope is measured |
+| P11-02 90% production coverage | complete | 6,391/7,099 production body lines, 90.0268%; full implemented scope is measured |
 | P11-03 applicable GNATprove | complete | Journal state machine SPARK flow/proof passes |
 | P11-04 GNATdoc | complete | project documentation generation succeeds |
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
@@ -270,7 +270,7 @@ The stabilization work fixes explicit configuration propagation for maintenance,
 uses the recovery state machine in operational reporting, and tests release evidence corruption, process failures,
 native replay, policy drift, campaign contract errors, and scheduler resource accounting. `quality-manager doctor`
 negotiates the pinned model_runner headless contract successfully. Release status remains **blocked** by the measured
-coverage shortfall and the real candidate's quality failures; fixture-backed tests do not replace either gate.
+candidate's quality failures; fixture-backed tests do not replace that gate.
 
 Ada Quality `81b414f` adds a tested migration for the early schema-3 measurement semantics and finding identities.
 The live database passed migration and integrity checks with its durable identity preserved, and contains the six
@@ -380,5 +380,5 @@ release candidate `27d1550a00258e7ed7c5bb319c4cf2ab520182068dfc7680fa27a02d99f08
 Coordinator ownership now uses an expiry-aware durable lease with fencing generations and renewal before external
 work. The suite kills a helper process without finalization, reopens its database, reconstructs the prepared journal
 intent, rejects a competing opener, verifies expired-owner takeover, and completes 128 acquire/release cycles. The
-full production measurement is 6,201/7,096 lines (87.3873%), so the 90% gate remains open instead of carrying forward
-the earlier partial-scope result.
+full production measurement is 6,391/7,099 lines (90.0268%), satisfying the stabilization gate without exclusions or
+carrying forward an earlier partial-scope result.

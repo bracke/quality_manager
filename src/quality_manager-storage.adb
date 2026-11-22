@@ -873,7 +873,7 @@ package body Quality_Manager.Storage is
                Result := Make_Result
                  (Invalid_Request, "lease generation precondition failed", "qm.lease.stale");
                return;
-            elsif Lease.Generation = Interfaces.Unsigned_64'Last then
+            elsif Lease.Generation = Interfaces.Unsigned_64 (Interfaces.Integer_64'Last) then
                Database.Transactions.Rollback (Tx);
                Result := Make_Result (Integrity_Error, "lease generation exhausted", "qm.lease.generation");
                return;

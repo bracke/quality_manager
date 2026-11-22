@@ -173,6 +173,52 @@ begin
             elsif Ada.Strings.Fixed.Index (Text, "plan --project 7 --run 2") = 1
               or else Text = "plan show PLAN-001 --revision 1"
             then
+               if Ada.Strings.Fixed.Index (To_String (Database_Path), "planning-invalid-json") > 0 then
+                  Ada.Text_IO.Put ("{");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "planning-empty-tasks") > 0 then
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":2,""command"":""plan"",""data"":{" &
+                     """plan_id"":""PLAN-001"",""revision"":1,""project_id"":7,""run_id"":2," &
+                     """working_source_fingerprint"":""candidate-source""," &
+                     """fingerprint"":""plan-fingerprint"",""content_sha256"":""plan-content-sha256-v2:" &
+                     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
+                     """dry_run"":false,""stored"":true,""tasks"":[]}}");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "planning-bad-task") > 0 then
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":2,""command"":""plan"",""data"":{" &
+                     """plan_id"":""PLAN-001"",""revision"":1,""project_id"":7,""run_id"":2," &
+                     """working_source_fingerprint"":""candidate-source""," &
+                     """fingerprint"":""plan-fingerprint"",""content_sha256"":""plan-content-sha256-v2:" &
+                     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
+                     """dry_run"":false,""stored"":true,""tasks"":[1]}}");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "planning-empty-findings") > 0 then
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":2,""command"":""plan"",""data"":{" &
+                     """plan_id"":""PLAN-001"",""revision"":1,""project_id"":7,""run_id"":2," &
+                     """working_source_fingerprint"":""candidate-source""," &
+                     """fingerprint"":""plan-fingerprint"",""content_sha256"":""plan-content-sha256-v2:" &
+                     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
+                     """dry_run"":false,""stored"":true,""tasks"":[{""id"":""IMP-001"",""findings"":[]}]}}");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "planning-duplicate-finding") > 0 then
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":2,""command"":""plan"",""data"":{" &
+                     """plan_id"":""PLAN-001"",""revision"":1,""project_id"":7,""run_id"":2," &
+                     """working_source_fingerprint"":""candidate-source""," &
+                     """fingerprint"":""plan-fingerprint"",""content_sha256"":""plan-content-sha256-v2:" &
+                     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
+                     """dry_run"":false,""stored"":true,""tasks"":[{" &
+                     """id"":""IMP-001"",""findings"":[""finding-a"",""finding-a""]}]}}");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               end if;
                Ada.Text_IO.Put
                  ("{""schema_version"":2,""command"":""plan"",""data"":{" &
                   """plan_id"":""PLAN-001"",""revision"":1,""project_id"":7," &
@@ -198,16 +244,64 @@ begin
                return;
             elsif Ada.Strings.Fixed.Index (Text, "plan approve ") = 1 then
                Ada.Text_IO.Put
-                 ("{""schema_version"":2,""command"":""plan approve"",""data"":{" &
+                 ("{""schema_version"":" &
+                  (if Ada.Strings.Fixed.Index (To_String (Database_Path), "approval-natural-type") > 0
+                   then """2"""
+                   elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "approval-natural-range") > 0
+                   then "-1"
+                   else "2") &
+                  ",""command"":" &
+                  (if Ada.Strings.Fixed.Index (To_String (Database_Path), "approval-string-type") > 0
+                   then "1" else """plan approve""") &
+                  ",""data"":{" &
                   """plan_id"":""PLAN-001"",""revision"":1," &
                   """content_sha256"":""plan-content-sha256-v2:" &
                   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
-                  """approved"":true,""invocation"":""" & To_String (Invocation) & """}}");
+                  """approved"":" &
+                  (if Ada.Strings.Fixed.Index (To_String (Database_Path), "approval-boolean-type") > 0
+                   then """true"""
+                   elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "approval-mismatch") > 0
+                   then "false" else "true") &
+                  ",""invocation"":""" & To_String (Invocation) & """}}");
                Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
                return;
             elsif Ada.Strings.Fixed.Index (Text, "apply PLAN-001 ") = 1
               and then Ada.Strings.Fixed.Index (Text, "--task IMP-001") > 0
             then
+               if Ada.Strings.Fixed.Index (To_String (Database_Path), "publication-identity") > 0 then
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":2,""command"":""apply"",""data"":{" &
+                     """plan_id"":""OTHER"",""revision"":1,""content_sha256"":""plan-content-sha256-v2:" &
+                     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
+                     """dry_run"":true,""tasks"":[]}}");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "publication-empty") > 0 then
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":2,""command"":""apply"",""data"":{" &
+                     """plan_id"":""PLAN-001"",""revision"":1,""content_sha256"":""plan-content-sha256-v2:" &
+                     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
+                     """dry_run"":true,""tasks"":[]}}");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "publication-bad-mapping") > 0 then
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":2,""command"":""apply"",""data"":{" &
+                     """plan_id"":""PLAN-001"",""revision"":1,""content_sha256"":""plan-content-sha256-v2:" &
+                     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
+                     """dry_run"":true,""tasks"":[1]}}");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "publication-no-match") > 0 then
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":2,""command"":""apply"",""data"":{" &
+                     """plan_id"":""PLAN-001"",""revision"":1,""content_sha256"":""plan-content-sha256-v2:" &
+                     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
+                     """dry_run"":true,""tasks"":[{""improve_task_id"":""OTHER""," &
+                     """harness_task_id"":""TASK-OTHER""}]}}");
+                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+                  return;
+               end if;
                Ada.Text_IO.Put
                  ("{""schema_version"":2,""command"":""apply"",""data"":{" &
                   """plan_id"":""PLAN-001"",""revision"":1," &
@@ -259,6 +353,41 @@ begin
                Ada.Text_IO.Put
                  ("{""schema_version"":1,""kind"":""error""," &
                   """error_code"":""MR-FRAMEWORK-0011"",""diagnostic"":""missing-operation""}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Exit_Status (2));
+               return;
+            elsif Ada.Strings.Fixed.Index (Text, "work status ") = 1
+              and then Ada.Strings.Fixed.Index (Text, "invalid-error-json") > 0
+            then
+               Ada.Text_IO.Put ("{");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Exit_Status (2));
+               return;
+            elsif Ada.Strings.Fixed.Index (Text, "work status ") = 1
+              and then Ada.Strings.Fixed.Index (Text, "incomplete-error") > 0
+            then
+               Ada.Text_IO.Put ("{""schema_version"":1,""kind"":""error""}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Exit_Status (2));
+               return;
+            elsif Ada.Strings.Fixed.Index (Text, "work status ") = 1
+              and then Ada.Strings.Fixed.Index (Text, "error-") > 0
+            then
+               declare
+                  Code : constant String :=
+                    (if Ada.Strings.Fixed.Index (Text, "error-not-ready") > 0
+                     then "MR-FRAMEWORK-0009"
+                     elsif Ada.Strings.Fixed.Index (Text, "error-temporary") > 0
+                     then "MR-FRAMEWORK-0010"
+                     elsif Ada.Strings.Fixed.Index (Text, "error-stale") > 0
+                     then "MR-FRAMEWORK-0012"
+                     elsif Ada.Strings.Fixed.Index (Text, "error-integrity") > 0
+                     then "MR-FRAMEWORK-0013"
+                     elsif Ada.Strings.Fixed.Index (Text, "error-authorization") > 0
+                     then "MR-FRAMEWORK-0027"
+                     else "MR-FRAMEWORK-0033");
+               begin
+                  Ada.Text_IO.Put
+                    ("{""schema_version"":1,""kind"":""error""," &
+                     """error_code"":""" & Code & """,""diagnostic"":""forced error""}");
+               end;
                Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Exit_Status (2));
                return;
             elsif Ada.Strings.Fixed.Index (Text, "work inspect ") = 1

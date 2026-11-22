@@ -1029,7 +1029,7 @@ package body Quality_Manager.Dispatch is
          Timeout_Seconds => Timeout_Seconds);
       if not Lease_Available then
          return;
-      elsif Expected = Interfaces.Unsigned_64'Last then
+      elsif Expected = Interfaces.Unsigned_64 (Interfaces.Integer_64'Last) then
          Result := Make_Result
            (Integrity_Error, "project execution lease generation is exhausted", "qm.dispatch.lease-generation");
          return;
@@ -1428,7 +1428,7 @@ package body Quality_Manager.Dispatch is
                  (To_String (Work.Project.Canonical_Path))]));
       if not Lease_Available then
          return;
-      elsif Expected = Interfaces.Unsigned_64'Last then
+      elsif Expected = Interfaces.Unsigned_64 (Interfaces.Integer_64'Last) then
          Result := Make_Result
            (Integrity_Error, "project integration lease generation is exhausted",
             "qm.integration.lease-generation");
