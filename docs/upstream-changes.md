@@ -30,6 +30,9 @@ Compare the exact revision and complete persisted-content digest inside the appr
 revision or digest mismatch without mutation. Include content_sha256 in JSON and audit evidence. Retain the
 interactive latest-revision form.
 
+Status: **implemented and validated** in Improve commit `e3c3b08`. Exact latest approval, stale-revision rejection,
+content-mismatch rejection, versioned JSON, generated CLI assets, all 135 tests, and the forced validation build pass.
+
 ## MR-HEADLESS-01 — Noninteractive native work
 
 Add versioned JSON commands:

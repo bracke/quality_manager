@@ -33,8 +33,8 @@ alr test
 execution and conflict-free integration are exact-identity, leased, journaled,
 and restart-safe. A native completion is not accepted until fresh Ada Quality
 evidence, exact Improve verification, and an explicit regression comparison all
-pass. Autonomous Improve approval remains disabled until the atomic
-exact-revision contract in `docs/upstream-changes.md` is implemented.
+pass. Autonomous approval uses Improve's atomic revision-and-content-qualified
+contract; coordinator authorization must still match the exact plan, policy, action, and lifetime.
 
 Phase 7 adds a restart-reconstructible priority scheduler and one-shot/daemon
 maintenance entry points. Enabled projects receive independent durable cycles;

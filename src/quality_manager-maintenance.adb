@@ -622,7 +622,9 @@ package body Quality_Manager.Maintenance is
                               Project => Project, Origin => Quality_Manager.Model.Maintenance,
                               Finding_Identities => To_Unbounded_String ("__assessment__"), Priority => 250,
                               Improve_Plan_Id => Null_Unbounded_String, Improve_Revision => 0,
-                              Improve_Task_Id => Null_Unbounded_String, State => Quality_Manager.Model.Queued,
+                              Improve_Task_Id => Null_Unbounded_String,
+                              Improve_Content_SHA256 => Null_Unbounded_String,
+                              State => Quality_Manager.Model.Queued,
                               Outcome => Quality_Manager.Model.No_Outcome);
                         begin
                            Quality_Manager.Storage.Records.Save (Item.Database.all, Work, Result);

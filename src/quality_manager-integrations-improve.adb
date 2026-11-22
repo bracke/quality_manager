@@ -1,7 +1,6 @@
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Hostkit.Process;
-with Quality_Manager.Results;
 
 package body Quality_Manager.Integrations.Improve is
    function Image (Value : Positive) return String is
@@ -77,16 +76,16 @@ package body Quality_Manager.Integrations.Improve is
    procedure Approve_Exact_Revision
      (Item : Adapter; Plan_Id : String; Revision : Positive; Content_SHA256 : String;
       Result : out JSON_CLI.Response) is
-      pragma Unreferenced (Item, Plan_Id, Revision, Content_SHA256);
+      Args : Processes.String_Vectors.Vector;
    begin
-      Result :=
-        (Status => Quality_Manager.Results.Make_Result
-           (Quality_Manager.Results.Incompatible_Contract,
-            "Improve lacks atomic --revision/--content-sha256 approval",
-            "qm.improve.exact-approval-unavailable"),
-         Exit_Status => -1,
-         Document => Null_Unbounded_String,
-         Diagnostics => Null_Unbounded_String);
+      Args.Append (To_Unbounded_String ("plan"));
+      Args.Append (To_Unbounded_String ("approve"));
+      Args.Append (To_Unbounded_String (Plan_Id));
+      Args.Append (To_Unbounded_String ("--revision"));
+      Args.Append (To_Unbounded_String (Image (Revision)));
+      Args.Append (To_Unbounded_String ("--content-sha256"));
+      Args.Append (To_Unbounded_String (Content_SHA256));
+      Invoke (Item, Args, "plan approve", Result);
    end Approve_Exact_Revision;
 
    procedure Publication

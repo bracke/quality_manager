@@ -1030,6 +1030,7 @@ package body Quality_Manager_Test_Suite is
             Improve_Plan_Id => Null_Unbounded_String,
             Improve_Revision => 0,
             Improve_Task_Id => Null_Unbounded_String,
+            Improve_Content_SHA256 => Null_Unbounded_String,
             State => Quality_Manager.Model.Discovered,
             Outcome => Quality_Manager.Model.No_Outcome);
          Dispatch : Quality_Manager.Storage.Schema.Dispatch :=
@@ -1417,12 +1418,15 @@ package body Quality_Manager_Test_Suite is
          Adapter : Quality_Manager.Integrations.Improve.Adapter;
       begin
          Quality_Manager.Integrations.Improve.Initialize
-           (Adapter, "improve", "config.toml", "quality.db", "improve.db");
+           (Adapter, "./bin/qm_adapter_fixture", "config.toml", "quality.db", "improve.db");
          Quality_Manager.Integrations.Improve.Approve_Exact_Revision
-           (Adapter, "PLAN-001", 1, "digest", Response);
+           (Adapter, "PLAN-001", 1, "content-digest", Response);
          Assert
-           (Response.Status.Kind = Quality_Manager.Results.Incompatible_Contract,
-            "autonomous approval fenced until atomic upstream contract exists");
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index
+              (To_String (Response.Document),
+               "plan approve PLAN-001 --revision 1 --content-sha256 content-digest") > 0,
+            "autonomous approval uses Improve's atomic exact-revision contract");
       end;
 
       declare
@@ -1526,10 +1530,13 @@ package body Quality_Manager_Test_Suite is
            (Improve_Adapter, "PLAN-001", 2, Response);
          Assert (Response.Status.Kind = Quality_Manager.Results.Success, "Improve approval inspection is exposed");
          Quality_Manager.Integrations.Improve.Approve_Exact_Revision
-           (Improve_Adapter, "PLAN-001", 2, "digest", Response);
+           (Improve_Adapter, "PLAN-001", 2, "content-digest", Response);
          Assert
-           (Response.Status.Kind = Quality_Manager.Results.Incompatible_Contract,
-            "autonomous approval fails closed until Improve supports atomic exact revision approval");
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index
+              (To_String (Response.Document),
+               "plan approve PLAN-001 --revision 2 --content-sha256 content-digest") > 0,
+            "autonomous approval invokes the atomic exact revision contract");
          Quality_Manager.Integrations.Improve.Preflight_Publication
            (Improve_Adapter, "PLAN-001", "IMP-001", Response);
          Assert (Response.Status.Kind = Quality_Manager.Results.Success, "Improve preflight is exposed");
@@ -2357,6 +2364,8 @@ package body Quality_Manager_Test_Suite is
          Improve_Plan_Id    => To_Unbounded_String ("PLAN-001"),
          Improve_Revision   => 1,
          Improve_Task_Id    => To_Unbounded_String ("IMP-001"),
+         Improve_Content_SHA256 => To_Unbounded_String
+           ("plan-content-sha256-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
          State              => Quality_Manager.Model.Awaiting_Assessment,
          Outcome            => Quality_Manager.Model.No_Outcome);
       Request   : constant Quality_Manager.Verification.Remediation_Request :=
@@ -2636,7 +2645,8 @@ package body Quality_Manager_Test_Suite is
          Project => Project_1, Origin => Quality_Manager.Model.Maintenance,
          Finding_Identities => To_Unbounded_String ("AQ-01"), Priority => 510,
          Improve_Plan_Id => To_Unbounded_String ("plan-1"), Improve_Revision => 1,
-         Improve_Task_Id => To_Unbounded_String ("task-1"), State => Quality_Manager.Model.Queued,
+         Improve_Task_Id => To_Unbounded_String ("task-1"), Improve_Content_SHA256 => Null_Unbounded_String,
+         State => Quality_Manager.Model.Queued,
          Outcome => Quality_Manager.Model.No_Outcome);
       Work_2 : constant Quality_Manager.Storage.Schema.Work_Item :=
         (Work_Id => To_Unbounded_String ("work:scheduler:two"),
@@ -2644,7 +2654,8 @@ package body Quality_Manager_Test_Suite is
          Project => Project_2, Origin => Quality_Manager.Model.Campaign,
          Finding_Identities => To_Unbounded_String ("TST-03"), Priority => 150,
          Improve_Plan_Id => To_Unbounded_String ("plan-2"), Improve_Revision => 1,
-         Improve_Task_Id => To_Unbounded_String ("task-2"), State => Quality_Manager.Model.Queued,
+         Improve_Task_Id => To_Unbounded_String ("task-2"), Improve_Content_SHA256 => Null_Unbounded_String,
+         State => Quality_Manager.Model.Queued,
          Outcome => Quality_Manager.Model.No_Outcome);
 
       procedure Cleanup is
@@ -2933,7 +2944,8 @@ package body Quality_Manager_Test_Suite is
          Origin => Quality_Manager.Model.Maintenance,
          Finding_Identities => To_Unbounded_String ("TST-03"), Priority => 150,
          Improve_Plan_Id => Null_Unbounded_String, Improve_Revision => 0,
-         Improve_Task_Id => Null_Unbounded_String, State => Quality_Manager.Model.Planning,
+         Improve_Task_Id => Null_Unbounded_String, Improve_Content_SHA256 => Null_Unbounded_String,
+         State => Quality_Manager.Model.Planning,
          Outcome => Quality_Manager.Model.No_Outcome);
 
       function Definition

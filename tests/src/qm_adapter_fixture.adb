@@ -99,7 +99,10 @@ begin
                   """project"":""fixture"",""run_id"":2," &
                   """assessment_fingerprint"":""assessment-2""," &
                   """working_source_fingerprint"":""candidate-source""," &
-                  """fingerprint"":""plan-fingerprint"",""planner"":""deterministic""," &
+                  """fingerprint"":""plan-fingerprint""," &
+                  """content_sha256"":""plan-content-sha256-v2:" &
+                  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
+                  """planner"":""deterministic""," &
                   """agent_provider"":"""",""agent_model_sha256"":""""," &
                   """dry_run"":false,""stored"":true,""tasks"":[{" &
                   """id"":""IMP-001"",""title"":""Fix fixture violation""," &
@@ -111,6 +114,15 @@ begin
                   """verification"":""reassess"",""confidence"":100," &
                   """requires_review"":true,""files"":[]," &
                   """findings"":[""finding-b"",""finding-a""],""depends_on"":[]}]}}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
+            elsif Ada.Strings.Fixed.Index (Text, "plan approve ") = 1 then
+               Ada.Text_IO.Put
+                 ("{""schema_version"":2,""command"":""plan approve"",""data"":{" &
+                  """plan_id"":""PLAN-001"",""revision"":1," &
+                  """content_sha256"":""plan-content-sha256-v2:" &
+                  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
+                  """approved"":true,""invocation"":""" & To_String (Invocation) & """}}");
                Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
                return;
             elsif Ada.Strings.Fixed.Index (Text, "doctor ") = 1 then

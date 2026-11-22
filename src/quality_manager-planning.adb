@@ -41,6 +41,7 @@ package body Quality_Manager.Planning is
       Plan_Id     : Unbounded_String;
       Revision    : Natural := 0;
       Fingerprint : Unbounded_String;
+      Content_SHA256 : Unbounded_String;
       Tasks       : Task_Vectors.Vector;
    end record;
 
@@ -101,6 +102,16 @@ package body Quality_Manager.Planning is
       return True;
    end Boolean_Field;
 
+   function Valid_Content_SHA256 (Value : String) return Boolean is
+      Prefix : constant String := "plan-content-sha256-v2:";
+   begin
+      return Value'Length = Prefix'Length + 64
+        and then Value (Value'First .. Value'First + Prefix'Length - 1) = Prefix
+        and then
+          (for all Index in Value'First + Prefix'Length .. Value'Last =>
+             Value (Index) in '0' .. '9' | 'a' .. 'f');
+   end Valid_Content_SHA256;
+
    procedure Decode
      (Response         : Quality_Manager.Integrations.JSON_CLI.Response;
       Project          : Quality_Manager.Identities.Project_Key;
@@ -155,6 +166,8 @@ package body Quality_Manager.Planning is
            or else To_String (Source) /= Candidate_Source
            or else not String_Field (Document, Data, "fingerprint", Plan.Fingerprint)
            or else Length (Plan.Fingerprint) = 0
+           or else not String_Field (Document, Data, "content_sha256", Plan.Content_SHA256)
+           or else not Valid_Content_SHA256 (To_String (Plan.Content_SHA256))
            or else not Boolean_Field (Document, Data, "dry_run", Dry_Run)
            or else Dry_Run
            or else not Boolean_Field (Document, Data, "stored", Stored)
@@ -292,6 +305,7 @@ package body Quality_Manager.Planning is
                   Improve_Plan_Id => Plan.Plan_Id,
                   Improve_Revision => Plan.Revision,
                   Improve_Task_Id => Plan_Task.Task_Id,
+                  Improve_Content_SHA256 => Plan.Content_SHA256,
                   State => Quality_Manager.Model.Awaiting_Approval,
                   Outcome => Quality_Manager.Model.Authorization_Required),
                Result);

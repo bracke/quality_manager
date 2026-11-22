@@ -59,9 +59,10 @@ fingerprint does not match the selected assessment contract.
 Coordinator adapters additionally validate the response `command` discriminator. Summary adapters perform the same
 check for `report_type`; matching only `schema_version` is insufficient provenance for either interface.
 
-Gap **IMP-APPROVE-01**: the CLI approves only the latest revision and accepts neither an expected revision nor a
-complete content digest. Autonomous approval is disabled until an atomic
-plan approve PLAN-ID --revision N --content-sha256 DIGEST contract exists and returns the bound digest.
+**IMP-APPROVE-01 implemented:** Improve commit `e3c3b08` adds atomic
+`plan approve PLAN-ID --revision N --content-sha256 DIGEST`. The approval transaction rejects a stale revision or
+mismatched complete-content fingerprint without mutation, while retaining the attended latest-revision form.
+Plan and approval JSON return the bound `content_sha256` value.
 
 ## model_runner
 
