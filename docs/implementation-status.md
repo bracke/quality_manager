@@ -5,7 +5,7 @@
 | Task | State | Evidence |
 | --- | --- | --- |
 | P0-01 revisions and versions | complete | compatibility matrix |
-| P0-02 Ada Quality contracts | complete; AQ-ID-01 implemented | source, schemas, fixture, Ada Quality `3a85a5b` |
+| P0-02 Ada Quality contracts | complete; AQ-ID-01 and legacy migration implemented | source, schemas, fixture, Ada Quality `81b414f` |
 | P0-03 Summary semantics | complete with AQS-PAGE-01 | source, schemas, fixture |
 | P0-04 Improve contracts | complete with IMP-APPROVE-01 | CLI/parser/operations source |
 | P0-05 /work trace | complete | CLI route → CLI.Work.Run_With → Framework.Work.Execute |
@@ -265,7 +265,7 @@ negotiates the pinned model_runner headless contract successfully. Release statu
 through P11-10 are completed with archived real-system evidence; fixture-backed acceptance tests do not replace those
 records.
 
-The available `ada_quality/.ada-quality.db` cannot supply those records: it is legacy schema 3 and Ada Quality's own
-schema-6 migration/integrity check rejects a noncanonical measurement. The attempted migration was rolled back by
-restoring a byte-identical pre-migration copy. A valid schema-6 multi-project inventory is therefore an explicit
-release-environment prerequisite, not a condition the coordinator may silently repair.
+Ada Quality `81b414f` adds a tested migration for the early schema-3 measurement semantics and finding identities.
+The live database passed migration and integrity checks with its durable identity preserved, and now contains the six
+projects selected for release-environment validation. P11-06 through P11-10 still require archived real workflow
+records; successful inventory migration alone does not satisfy those gates.

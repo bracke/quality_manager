@@ -874,6 +874,8 @@ package body Quality_Manager_Test_Suite is
    procedure Test_Persistent_Storage (Item : in out Fixture) is
       pragma Unreferenced (Item);
       Path      : constant String := "/tmp/quality-manager-phase2.database";
+      Nested_Root : constant String := "/tmp/quality-manager-parent-creation";
+      Nested_Path : constant String := Nested_Root & "/nested/coordinator.database";
       Store     : Quality_Manager.Storage.Store;
       Result    : Quality_Manager.Results.Operation_Result;
       Work      : Quality_Manager.Storage.Stored_Entity :=
@@ -904,6 +906,18 @@ package body Quality_Manager_Test_Suite is
       end Cleanup;
 
    begin
+      if Ada.Directories.Exists (Nested_Root) then
+         Ada.Directories.Delete_Tree (Nested_Root);
+      end if;
+      Quality_Manager.Storage.Open (Store, Nested_Path, True, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success,
+         "writable store creates its configured parent path: " & Quality_Manager.Results.Message (Result));
+      Assert (Ada.Directories.Exists (Nested_Path), "nested coordinator database was created");
+      Quality_Manager.Storage.Close (Store, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "nested coordinator database closes");
+      Ada.Directories.Delete_Tree (Nested_Root);
+
       Assert
         (Quality_Manager.Maintenance.Due_Reason
            ((Assessment_Run => 4, Assessment_Complete => True,

@@ -2,6 +2,7 @@
 /.build/
 /bin/
 /obj/
+/var/
 /config/*_config.*
 /tests/alire/
 /tests/bin/

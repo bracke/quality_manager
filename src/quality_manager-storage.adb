@@ -1,4 +1,5 @@
 with Ada.Directories;
+with Ada.Exceptions;
 with Ada.IO_Exceptions;
 with Ada.Strings.Fixed;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
@@ -242,6 +243,22 @@ package body Quality_Manager.Storage is
          if Result.Kind /= Success then
             return;
          end if;
+      end if;
+      if Writable and then not Exists then
+         declare
+            Parent : constant String := Ada.Directories.Containing_Directory (Path);
+         begin
+            if Parent'Length > 0 and then not Ada.Directories.Exists (Parent) then
+               Ada.Directories.Create_Path (Parent);
+            end if;
+         exception
+            when Error : others =>
+               Result := Make_Result
+                 (Execution_Error,
+                  "create coordinator database directory: " & Ada.Exceptions.Exception_Message (Error),
+                  "qm.storage.create-directory");
+               return;
+         end;
       end if;
       if Writable then
          if Exists then

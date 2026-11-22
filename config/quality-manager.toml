@@ -2,7 +2,7 @@
 database = "var/quality-manager.db"
 
 [quality]
-database = ""
+database = "../ada_quality/.ada-quality.db"
 
 [integrations]
 ada_quality = "../ada_quality/bin/ada-quality"
