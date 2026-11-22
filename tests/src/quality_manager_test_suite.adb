@@ -1398,7 +1398,10 @@ package body Quality_Manager_Test_Suite is
            (Quality_Adapter, "7", "ci", False, Response);
          Assert
            (Response.Status.Kind = Quality_Manager.Results.Success
-            and then Ada.Strings.Fixed.Index (To_String (Response.Document), "--dry-run --json") > 0,
+            and then Ada.Strings.Fixed.Index
+              (To_String (Response.Document), """source_fingerprint"":""candidate-source""") > 0
+            and then Ada.Strings.Fixed.Index
+              (To_String (Response.Document), """policy_fingerprint"":""policy""") > 0,
             "Ada Quality planning requires check-plan-v1");
          Quality_Manager.Integrations.Quality.Read_Assessment (Quality_Adapter, 4, Response);
          Assert
@@ -2939,7 +2942,10 @@ package body Quality_Manager_Test_Suite is
          Ada.Directories.Create_Directory (Wrapper_Root & "/config");
          Ada.Text_IO.Create (File, Ada.Text_IO.Out_File, Wrapper_Config);
          Ada.Text_IO.Put
-           (File, "[coordinator]" & ASCII.LF & "database = """ & Wrapper_Database & """" & ASCII.LF);
+           (File, "[coordinator]" & ASCII.LF & "database = """ & Wrapper_Database & """" & ASCII.LF
+            & "[quality]" & ASCII.LF & "database = ""quality.db""" & ASCII.LF
+            & "[integrations]" & ASCII.LF & "ada_quality = """
+            & Original_Directory & "/bin/qm_adapter_fixture""" & ASCII.LF);
          Ada.Text_IO.Close (File);
          Quality_Manager.Storage.Open (Wrapper_Store, Wrapper_Database, True, Wrapper_Result);
          Quality_Manager.Storage.Records.Save
@@ -3137,6 +3143,44 @@ package body Quality_Manager_Test_Suite is
                  "corrupt release evidence is rejected before export");
       end Check_Corrupt_Evidence;
 
+      procedure Check_Corrupt_Chunk_Digest is
+         Corrupt_Id : Unbounded_String;
+         Candidate  : Quality_Manager.Storage.Schema.Release;
+         Evidence   : Quality_Manager.Storage.Stored_Entity;
+      begin
+         Quality_Manager.Releases.Create
+           (Context, Project, "commit-corrupt-chunk", "source-corrupt", "policy-1", "toolchain-1",
+            "release-config-1", Corrupt_Id, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "chunk digest fixture created");
+         Candidate :=
+           (Release_Id => Corrupt_Id, Project => Project,
+            Candidate_Commit => To_Unbounded_String ("commit-corrupt-chunk"),
+            Source_Digest => To_Unbounded_String ("source-corrupt"),
+            Policy_Digest => To_Unbounded_String ("policy-1"),
+            Toolchain => To_Unbounded_String ("toolchain-1"),
+            Release_Config => To_Unbounded_String ("release-config-1"),
+            Generation => 1, Final_Assessment => 1, Coverage_Basis_Points => 9_000,
+            State => Quality_Manager.Model.Verified);
+         Quality_Manager.Storage.Records.Save (Store, Candidate, Result);
+         Evidence :=
+           (Internal_Id => 1, Kind => Quality_Manager.Storage.Release_Record,
+            Entity_Key => To_Unbounded_String
+              ("release-evidence-chunk:" & To_String (Corrupt_Id) & ":1:1"),
+            State => To_Unbounded_String ("CHUNK"),
+            Payload => To_Unbounded_String ("{""schema_version"":1}"),
+            Terminal => True, Generation => 1);
+         Quality_Manager.Storage.Put (Store, Evidence, Result);
+         Evidence.Entity_Key := To_Unbounded_String
+           ("release-evidence:" & To_String (Corrupt_Id) & ":1");
+         Evidence.State := To_Unbounded_String ("QUALIFIED");
+         Evidence.Payload := To_Unbounded_String ("digest=wrong" & ASCII.LF & "chunks=1");
+         Quality_Manager.Storage.Put (Store, Evidence, Result);
+         Quality_Manager.Releases.Export_Evidence
+           (Context, To_String (Corrupt_Id), Export_Path, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
+                 "chunked release evidence is rejected when its bundle digest differs");
+      end Check_Corrupt_Chunk_Digest;
+
       procedure Cleanup is
       begin
          if Ada.Directories.Exists (Path) then Ada.Directories.Delete_File (Path); end if;
@@ -3222,6 +3266,7 @@ package body Quality_Manager_Test_Suite is
       Check_Corrupt_Evidence ("commit-corrupt-envelope", "not-an-envelope");
       Check_Corrupt_Evidence
         ("commit-corrupt-digest", "digest=wrong" & ASCII.LF & "{""schema_version"":1}");
+      Check_Corrupt_Chunk_Digest;
       Quality_Manager.Releases.Invalidate_If_Changed
         (Context, To_String (Release_Id), "commit-2", "source-2", Invalidated, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success and then Invalidated,
@@ -3272,9 +3317,7 @@ package body Quality_Manager_Test_Suite is
          "adopted release checks complete their recovery journal");
       Quality_Manager.Releases.Run_Local_Checks_With_Tools
         (Context, 301, Release_Fixture,
-         "{""schema_version"":1,""command"":""rev-parse""," &
-         """report_type"":""rev-parse"",""kind"":""""," &
-         """invocation"":""rev-parse HEAD""}",
+         "fixture-commit",
          "source-2", "release-config-1", 9_000, False,
          Tool_Fixture, Tool_Fixture, Actual_Checks, Result);
       Assert
@@ -3291,9 +3334,7 @@ package body Quality_Manager_Test_Suite is
          & " tests=" & Boolean'Image (Actual_Checks.AUnit_Passed));
       Quality_Manager.Releases.Run_Local_Checks_With_Tools
         (Context, 302, Release_Fixture,
-         "{""schema_version"":1,""command"":""rev-parse""," &
-         """report_type"":""rev-parse"",""kind"":""""," &
-         """invocation"":""rev-parse HEAD""}",
+         "fixture-commit",
          "source-2", "release-config-1", 9_000, True,
          Tool_Fixture, Tool_Fixture, Actual_Checks, Result);
       Assert
@@ -3309,6 +3350,29 @@ package body Quality_Manager_Test_Suite is
          False, "/bin/false", "/bin/false", Actual_Checks, Result);
       Assert (Result.Kind = Quality_Manager.Results.Negative_Result,
               "completed failing release commands remain negative gate outcomes");
+      declare
+         Release_Project : constant Quality_Manager.Identities.Project_Key :=
+           (To_Unbounded_String ("database-a"), 7, To_Unbounded_String (Release_Fixture));
+         Candidate_Commit : constant String := "fixture-commit";
+         Release_Quality : Quality_Manager.Integrations.Quality.Adapter;
+         Qualified_Id    : Unbounded_String;
+      begin
+         Quality_Manager.Integrations.Quality.Initialize
+           (Release_Quality, Tool_Fixture, "release-quality.db", Release_Fixture);
+         Quality_Manager.Releases.Create
+           (Context, Release_Project, Candidate_Commit, "candidate-source", "policy", "toolchain",
+            "release-config-qualified", Qualified_Id, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success,
+                 "configured qualification fixture creates an exact candidate");
+         Quality_Manager.Releases.Qualify_With_Tools
+           (Context, Release_Quality, To_String (Qualified_Id), Tool_Fixture, Tool_Fixture,
+            Decision, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success and then Decision.Qualified
+            and then Length (Decision.Bundle_Digest) = 64,
+            "configured qualification obtains fresh evidence and runs every local gate: "
+            & Quality_Manager.Results.Message (Result));
+      end;
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception

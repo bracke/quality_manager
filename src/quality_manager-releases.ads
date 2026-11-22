@@ -1,5 +1,6 @@
 with Ada.Strings.Unbounded;
 with Quality_Manager.Identities;
+with Quality_Manager.Integrations.Quality;
 with Quality_Manager.Results;
 with Quality_Manager.Scheduler;
 with Quality_Manager.Verification;
@@ -69,6 +70,15 @@ package Quality_Manager.Releases is
       Decision   : out Qualification_Decision;
       Result     : out Quality_Manager.Results.Operation_Result);
 
+   procedure Qualify_With_Tools
+     (Item             : in out Context;
+      Quality          : Quality_Manager.Integrations.Quality.Adapter;
+      Release_Id       : String;
+      Alire_Executable : String;
+      Git_Executable   : String;
+      Decision         : out Qualification_Decision;
+      Result           : out Quality_Manager.Results.Operation_Result);
+
    procedure Run_Local_Checks
      (Item                  : in out Context;
       Operation             : Quality_Manager.Identities.Operation_Id;
@@ -116,6 +126,10 @@ package Quality_Manager.Releases is
       Config_Path      : String;
       Config_Required  : Boolean);
    procedure Qualify (Release_Id : String);
+   procedure Qualify_Configured
+     (Release_Id      : String;
+      Config_Path     : String;
+      Config_Required : Boolean);
    procedure Export_Evidence (Release_Id : String; Output_Path : String);
    procedure Export_Evidence_Configured
      (Release_Id      : String;

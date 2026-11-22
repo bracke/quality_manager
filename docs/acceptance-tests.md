@@ -32,8 +32,8 @@ unless another repository is named.
 | AT-022 | Every frozen target updated with newer pass | Reconcile campaign | Campaign Verified; upstream evidence read-only; completed | Delete temp DB |
 | AT-023 | Qualified release then changed commit/source | Invalidate candidate | Release Superseded; prior bundle retained; invalidated | Delete DB and export |
 | AT-024 | Applicable release gate below threshold | Evaluate release | Candidate not verified; no publication; negative result | Delete DB and export |
-| AT-025 | Exact 33 passes, checks, proof, 90% coverage | Evaluate release | Candidate Verified; canonical evidence saved; success | Delete DB and export |
-| AT-026 | Exported canonical bundle | Recompute envelope digest | Store unchanged; exported bytes match digest; integrity success | Delete DB and export |
+| AT-025 | Exact candidate plus fresh 33-pass assessment and local tool fixtures | Qualify release | Candidate Verified; chunked canonical evidence saved; success | Delete DB and export |
+| AT-026 | Exported canonical bundle | Reassemble chunks and recompute bundle digest | Store unchanged; exported bytes match digest; integrity success | Delete DB and export |
 | AT-027 | Improve publication journal interrupted | Recover publication/adopt mapping | Existing mapping retained; no duplicate task; reconciled | Delete temp DB |
 | AT-028 | Repeat coordinator recovery | Reconstruct/reconcile twice | Same terminal state and attempt count; no repeated upstream action | Delete temp DB |
 | AT-029 | unknown-schema.json | Parse adapter response | No mutation; upstream read only; incompatible contract | None |

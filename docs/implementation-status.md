@@ -201,23 +201,24 @@ GNATdoc passed.
 | Task | State | Evidence |
 | --- | --- | --- |
 | P9-01 immutable candidate identities | complete | project, commit, source, policy, toolchain, config, generation |
-| P9-02 release policy selection | complete | profile-derived policy/config digests and fail-closed creation |
-| P9-03 complete assessment | complete | exact 33-indicator complete/passing evidence predicate |
+| P9-02 release policy selection | complete | initial `release` profile and authoritative Ada Quality plan identities |
+| P9-03 complete assessment | complete | configured qualification runs a fresh full release assessment |
 | P9-04 blocking findings | complete | any violation or incomplete evidence blocks qualification |
 | P9-05 remediation generations | complete | source-changing work invalidates and creates a new generation |
 | P9-06 release checks | complete | journaled clean/reproducible Alire, AUnit, and proof execution |
 | P9-07 final-source verification | complete | commit/source/policy/toolchain/config alignment |
 | P9-08 qualification/invalidation | complete | qualified state and supersession on source change |
-| P9-09 evidence bundle/export | complete | versioned schema, canonical digest, verified export |
-| P9-10 qualification tests | complete for coordinator workflow | threshold failure, pass, export, invalidation, recovery |
+| P9-09 evidence bundle/export | complete | bounded chunk storage, versioned schema, canonical digest, verified export |
+| P9-10 qualification tests | complete for coordinator workflow | configured fresh assessment, local gates, export, invalidation, recovery |
 
-Local release checks use the bounded process service and a durable operation journal. An observed result is persisted
-before the journal commits and is adopted after interruption. Qualification never treats a failed gate as an execution
-failure and never publishes a tag, pushes a branch, or releases an Alire crate.
+Candidate creation uses Ada Quality's dry-run release plan for exact source, policy, and toolchain identities rather
+than synthesizing them locally. Local release checks use the bounded process service and a durable operation journal.
+An observed result is persisted before the journal commits and is adopted after interruption. Qualification never
+treats a failed gate as an execution failure and never publishes a tag, pushes a branch, or releases an Alire crate.
 
-Gate: **passed**. The 21-test suite covers below-90% rejection, complete qualification, evidence export,
-post-qualification invalidation, new candidate generation, and interrupted check adoption. Warnings-as-errors, forced
-validation, and GNATdoc passed.
+Gate: **passed for the coordinator workflow**. The 24-test suite covers below-90% rejection, configured fresh-evidence
+qualification, chunked evidence export, post-qualification invalidation, new candidate generation, and interrupted
+check adoption. The final real-project qualification record remains a Phase 11 environment gate.
 
 ## Phase 10 — Operational control and reporting
 
@@ -246,7 +247,7 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | Task | State | Evidence |
 | --- | --- | --- |
 | P11-01 complete AUnit suites | complete | 24/24 tests pass, including executable CLI acceptance |
-| P11-02 90% production coverage | complete | 4,283/4,758 body lines, 90.0160% |
+| P11-02 90% production coverage | complete | 4,428/4,915 body lines, 90.0906% |
 | P11-03 applicable GNATprove | complete | Journal state machine SPARK flow/proof passes |
 | P11-04 GNATdoc | complete | project documentation generation succeeds |
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |

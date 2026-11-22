@@ -1,4 +1,5 @@
 with Ada.Command_Line;
+with Ada.Directories;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Text_IO;
@@ -61,7 +62,15 @@ begin
             elsif Ada.Strings.Fixed.Index (Text, "check ") = 1
               and then Ada.Strings.Fixed.Index (Text, "--dry-run") > 0
             then
-               Kind := To_Unbounded_String ("check-plan");
+               Ada.Text_IO.Put
+                 ("{""schema_version"":1,""kind"":""check-plan"",""projects"":[{" &
+                  """project_id"":7,""path"":""/project""," &
+                  """source_fingerprint"":""candidate-source""," &
+                  """policy_fingerprint"":""policy""," &
+                  """toolchain_fingerprint"":""toolchain""," &
+                  """reuse_eligible"":false,""action"":""assess""}]}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
             elsif Ada.Strings.Fixed.Index (Text, "assessment diff ") = 1 then
                Ada.Text_IO.Put
                  ("{""schema_version"":1,""kind"":""assessment-comparison""," &
@@ -80,6 +89,10 @@ begin
             elsif Text = "database stats" then
                Kind := To_Unbounded_String ("database-statistics");
                Is_Database_Statistics := True;
+            elsif Text = "rev-parse HEAD" then
+               Ada.Text_IO.Put ("fixture-commit");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
             elsif Text = "work capabilities" then
                Ada.Text_IO.Put
                  ("{""schema_version"":1,""kind"":""work-capabilities""," &
@@ -180,7 +193,10 @@ begin
                end if;
                Ada.Text_IO.Put
                  ("{""schema_version"":1,""assessment_id"":2,""project_id"":7," &
-                  """project_path"":""/project"",""source_fingerprint"":""candidate-source""," &
+                  """project_path"":""" &
+                  (if To_String (Database_Path) = "release-quality.db"
+                   then Ada.Directories.Current_Directory else "/project") &
+                  """,""source_fingerprint"":""candidate-source""," &
                   """policy_fingerprint"":""policy"",""toolchain_fingerprint"":""toolchain""," &
                   """status"":""ASSESSMENT_COMPLETED"",""results"":[");
                for Result_Index in 1 .. 33 loop

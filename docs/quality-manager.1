@@ -34,10 +34,14 @@ Create an immutable campaign definition revision.
 Control a persisted campaign.
 .TP
 .B release-create PROJECT PROFILE
-Create an immutable release candidate.
+Create an immutable release candidate from Ada Quality's exact assessment plan.
+The initial implementation accepts the
+.B release
+profile.
 .TP
 .B release-qualify ID
-Qualify only when current assessment and release-check evidence is available.
+Run a fresh release assessment and journaled build, test, proof, coverage, and
+source-identity gates for the candidate.
 .TP
 .B release-export ID OUTPUT
 Verify and export a qualified evidence bundle.

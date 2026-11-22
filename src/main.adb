@@ -208,7 +208,9 @@ begin
                     (To_String (Options.Primary_Value), To_String (Options.Secondary_Value),
                      To_String (Options.Config_Path), Options.Config_Explicit);
                when Quality_Manager.CLI.Release_Qualify_Command =>
-                  Quality_Manager.Releases.Qualify (To_String (Options.Primary_Value));
+                  Quality_Manager.Releases.Qualify_Configured
+                    (To_String (Options.Primary_Value),
+                     To_String (Options.Config_Path), Options.Config_Explicit);
                when Quality_Manager.CLI.Release_Export_Command =>
                   Quality_Manager.Releases.Export_Evidence_Configured
                     (To_String (Options.Primary_Value), To_String (Options.Secondary_Value),

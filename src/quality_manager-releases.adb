@@ -7,6 +7,7 @@ with Hostkit;
 with Hostkit.Process;
 with Jsonlib.Serializers;
 with Quality_Manager.Config;
+with Quality_Manager.Integrations.JSON_CLI;
 with Quality_Manager.Integrations.Processes;
 with Quality_Manager.Model;
 with Quality_Manager.Journal;
@@ -15,6 +16,7 @@ with Quality_Manager.Storage.Records;
 with Quality_Manager.Storage.Schema;
 
 package body Quality_Manager.Releases is
+   use type Interfaces.Unsigned_64;
    use type Quality_Manager.Results.Result_Kind;
    use type Quality_Manager.Identities.Operation_Id;
    use type Quality_Manager.Journal.Journal_State;
@@ -30,6 +32,52 @@ package body Quality_Manager.Releases is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
    function B (Value : Boolean) return String is (if Value then "true" else "false");
+
+   Evidence_Chunk_Size : constant Positive := 400;
+
+   function Evidence_Key (Release_Id : String; Generation : Positive) return String is
+     ("release-evidence:" & Release_Id & ":" & N (Generation));
+
+   function Evidence_Chunk_Key
+     (Release_Id : String;
+      Generation : Positive;
+      Chunk      : Positive) return String is
+     ("release-evidence-chunk:" & Release_Id & ":" & N (Generation) & ":" & N (Chunk));
+
+   function Check_Failure_Message
+     (Checks          : Check_Results;
+      Expected_Commit : String) return String is
+   begin
+      return
+        "local release checks failed: commit="
+        & Boolean'Image (To_String (Checks.Candidate_Commit) = Expected_Commit)
+        & " (observed=" & Q (To_String (Checks.Candidate_Commit))
+        & ", expected=" & Q (Expected_Commit) & ")"
+        & ", build=" & Boolean'Image (Checks.Clean_Build)
+        & ", reproducible=" & Boolean'Image (Checks.Reproducible_Build)
+        & ", tests=" & Boolean'Image (Checks.AUnit_Passed)
+        & ", proof=" & Boolean'Image (not Checks.Proof_Applicable or else Checks.GNATprove_Passed);
+   end Check_Failure_Message;
+
+   function Qualification_Operation
+     (Release_Id : String;
+      Generation : Positive) return Quality_Manager.Identities.Operation_Id is
+      Digest : constant String := Quality_Manager.Identities.Canonical_Digest
+        ([Quality_Manager.Identities.Text_Value ("release-qualification"),
+          Quality_Manager.Identities.Text_Value (Release_Id),
+          Quality_Manager.Identities.Number_Value (Interfaces.Unsigned_64 (Generation))]);
+      Value : Interfaces.Unsigned_64 := 0;
+   begin
+      for Element of Digest (Digest'First .. Digest'First + 15) loop
+         Value := Value * 16
+           + Interfaces.Unsigned_64
+             (if Element in '0' .. '9'
+              then Character'Pos (Element) - Character'Pos ('0')
+              else Character'Pos (Element) - Character'Pos ('a') + 10);
+      end loop;
+      return Quality_Manager.Identities.Operation_Id
+        ((if Value = 0 then 1 else Value));
+   end Qualification_Operation;
 
    function Trim_Output (Value : String) return String is
       First : Natural := Value'First;
@@ -381,7 +429,8 @@ package body Quality_Manager.Releases is
          Decode_Stored;
          Finish_Journal;
          if Result.Kind = Success and then not Checks.Release_Checks_Passed then
-            Result := Make_Result (Negative_Result, "one or more local release checks failed", "qm.release.checks");
+            Result := Make_Result
+              (Negative_Result, Check_Failure_Message (Checks, Candidate_Commit), "qm.release.checks");
          end if;
          return;
       elsif Result.Kind /= Not_Found then
@@ -476,7 +525,8 @@ package body Quality_Manager.Releases is
       if Result.Kind = Success and then Infrastructure_Failure then
          Result := Make_Result (Execution_Error, "release-check execution failed", "qm.release.check-execution");
       elsif Result.Kind = Success and then not Checks.Release_Checks_Passed then
-         Result := Make_Result (Negative_Result, "one or more local release checks failed", "qm.release.checks");
+         Result := Make_Result
+           (Negative_Result, Check_Failure_Message (Checks, Candidate_Commit), "qm.release.checks");
       end if;
    end Run_Local_Checks_With_Tools;
 
@@ -547,15 +597,36 @@ package body Quality_Manager.Releases is
         (Quality_Manager.Identities.Canonical_Digest
            ([Quality_Manager.Identities.Text_Value (To_String (Bundle))]));
       declare
+         Text        : constant String := To_String (Bundle);
+         Chunk_Count : constant Positive :=
+           Positive ((Text'Length + Evidence_Chunk_Size - 1) / Evidence_Chunk_Size);
          Evidence : constant Quality_Manager.Storage.Stored_Entity :=
            (Internal_Id => 1, Kind => Quality_Manager.Storage.Release_Record,
-            Entity_Key => To_Unbounded_String
-              ("release-evidence:" & Release_Id & ":" & N (Candidate.Generation)),
+            Entity_Key => To_Unbounded_String (Evidence_Key (Release_Id, Candidate.Generation)),
             State => To_Unbounded_String ("QUALIFIED"),
-            Payload => To_Unbounded_String ("digest=" & To_String (Digest) & ASCII.LF) & Bundle,
+            Payload => To_Unbounded_String
+              ("digest=" & To_String (Digest) & ASCII.LF & "chunks=" & N (Chunk_Count)),
             Terminal => True, Generation => 1);
       begin
-         Quality_Manager.Storage.Put (Item.Database.all, Evidence, Result);
+         for Chunk in 1 .. Chunk_Count loop
+            declare
+               First : constant Positive := Text'First + (Chunk - 1) * Evidence_Chunk_Size;
+               Last  : constant Positive := Positive'Min (Text'Last, First + Evidence_Chunk_Size - 1);
+               Part  : constant Quality_Manager.Storage.Stored_Entity :=
+                 (Internal_Id => 1, Kind => Quality_Manager.Storage.Release_Record,
+                  Entity_Key => To_Unbounded_String
+                    (Evidence_Chunk_Key (Release_Id, Candidate.Generation, Chunk)),
+                  State => To_Unbounded_String ("CHUNK"),
+                  Payload => To_Unbounded_String (Text (First .. Last)),
+                  Terminal => True, Generation => 1);
+            begin
+               Quality_Manager.Storage.Put (Item.Database.all, Part, Result);
+               exit when Result.Kind /= Success;
+            end;
+         end loop;
+         if Result.Kind = Success then
+            Quality_Manager.Storage.Put (Item.Database.all, Evidence, Result);
+         end if;
       end;
       if Result.Kind /= Success then return; end if;
       Candidate.Final_Assessment := Assessment.Assessment_Id;
@@ -568,6 +639,50 @@ package body Quality_Manager.Releases is
          Decision.Bundle_Digest := Digest;
       end if;
    end Evaluate;
+
+   procedure Qualify_With_Tools
+     (Item             : in out Context;
+      Quality          : Quality_Manager.Integrations.Quality.Adapter;
+      Release_Id       : String;
+      Alire_Executable : String;
+      Git_Executable   : String;
+      Decision         : out Qualification_Decision;
+      Result           : out Operation_Result) is
+      Candidate  : Quality_Manager.Storage.Schema.Release;
+      Response   : Quality_Manager.Integrations.JSON_CLI.Response;
+      Assessment : Quality_Manager.Verification.Assessment_Evidence;
+      Checks     : Check_Results;
+      References : constant Evidence_References :=
+        (Improve_Audit => To_Unbounded_String ("not-required:no-remediation"),
+         Native_Audit => To_Unbounded_String ("not-required:no-agent-execution"),
+         Regression_Evidence => To_Unbounded_String ("full-release-assessment"),
+         Authorization_Audit => To_Unbounded_String ("not-required:measurement-only"));
+   begin
+      Decision := (others => <>);
+      Load_Release (Item, Release_Id, Candidate, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Quality_Manager.Integrations.Quality.Run_Check
+        (Quality,
+         Ada.Strings.Fixed.Trim
+           (Positive'Image (Candidate.Project.Quality_Project_Id), Ada.Strings.Both),
+         "release", False, Response);
+      Quality_Manager.Verification.Decode_Assessment (Response, Assessment, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Run_Local_Checks_With_Tools
+        (Item, Qualification_Operation (Release_Id, Candidate.Generation),
+         To_String (Candidate.Project.Canonical_Path),
+         To_String (Candidate.Candidate_Commit), To_String (Candidate.Source_Digest),
+         To_String (Candidate.Release_Config), Assessment.Coverage_Basis_Points,
+         Assessment.Proof_Applicable, Alire_Executable, Git_Executable, Checks, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Evaluate (Item, Release_Id, Assessment, Checks, References, Decision, Result);
+   end Qualify_With_Tools;
 
    procedure Invalidate_If_Changed
      (Item                 : in out Context;
@@ -624,12 +739,13 @@ package body Quality_Manager.Releases is
          return;
       end if;
       Quality_Manager.Storage.Read
-        (Item.Database.all, "release-evidence:" & Release_Id & ":" & N (Candidate.Generation), Evidence, Result);
+        (Item.Database.all, Evidence_Key (Release_Id, Candidate.Generation), Evidence, Result);
       if Result.Kind /= Success then return; end if;
       declare
          Payload : constant String := To_String (Evidence.Payload);
          Break   : constant Natural := Ada.Strings.Fixed.Index (Payload, ASCII.LF & "");
          Prefix  : constant String := "digest=";
+         Chunks_Prefix : constant String := "chunks=";
       begin
          if Break = 0 or else Payload'Length <= Prefix'Length
            or else Payload (Payload'First .. Payload'First + Prefix'Length - 1) /= Prefix
@@ -639,15 +755,67 @@ package body Quality_Manager.Releases is
          end if;
          declare
             Digest : constant String := Payload (Payload'First + Prefix'Length .. Break - 1);
-            Bundle : constant String := Payload (Break + 1 .. Payload'Last);
-            Actual : constant String := Quality_Manager.Identities.Canonical_Digest
-              ([Quality_Manager.Identities.Text_Value (Bundle)]);
+            Chunk_Declaration : constant String := Payload (Break + 1 .. Payload'Last);
+            Chunk_Count : Natural := 0;
+            Bundle : Unbounded_String;
          begin
-            if Digest /= Actual then
-               Result := Make_Result (Integrity_Error, "release evidence digest mismatch", "qm.release.digest");
+            if Chunk_Declaration'Length <= Chunks_Prefix'Length
+              or else Chunk_Declaration
+                (Chunk_Declaration'First .. Chunk_Declaration'First + Chunks_Prefix'Length - 1)
+                  /= Chunks_Prefix
+            then
+               Result := Make_Result
+                 (Integrity_Error, "release evidence chunk declaration is corrupt", "qm.release.evidence");
                return;
             end if;
-            Write_File (Output_Path, Bundle, Result);
+            begin
+               Chunk_Count := Natural'Value
+                 (Chunk_Declaration
+                    (Chunk_Declaration'First + Chunks_Prefix'Length .. Chunk_Declaration'Last));
+            exception
+               when Constraint_Error =>
+                  Result := Make_Result
+                    (Integrity_Error, "release evidence chunk count is invalid", "qm.release.evidence");
+                  return;
+            end;
+            if Chunk_Count = 0 then
+               Result := Make_Result
+                 (Integrity_Error, "release evidence has no chunks", "qm.release.evidence");
+               return;
+            end if;
+            for Chunk in 1 .. Chunk_Count loop
+               declare
+                  Part : Quality_Manager.Storage.Stored_Entity;
+               begin
+                  Quality_Manager.Storage.Read
+                    (Item.Database.all, Evidence_Chunk_Key (Release_Id, Candidate.Generation, Chunk),
+                     Part, Result);
+                  if Result.Kind /= Success then
+                     Result := Make_Result
+                       (Integrity_Error, "release evidence chunk is missing", "qm.release.evidence-chunk");
+                     return;
+                  elsif Part.Kind /= Quality_Manager.Storage.Release_Record
+                    or else To_String (Part.State) /= "CHUNK" or else not Part.Terminal
+                  then
+                     Result := Make_Result
+                       (Integrity_Error, "release evidence chunk is invalid", "qm.release.evidence-chunk");
+                     return;
+                  end if;
+                  Append (Bundle, Part.Payload);
+               end;
+            end loop;
+            declare
+               Text   : constant String := To_String (Bundle);
+               Actual : constant String := Quality_Manager.Identities.Canonical_Digest
+                 ([Quality_Manager.Identities.Text_Value (Text)]);
+            begin
+               if Digest /= Actual then
+                  Result := Make_Result
+                    (Integrity_Error, "release evidence digest mismatch", "qm.release.digest");
+                  return;
+               end if;
+               Write_File (Output_Path, Text, Result);
+            end;
          end;
       end;
    end Export_Evidence;
@@ -669,13 +837,26 @@ package body Quality_Manager.Releases is
       Result, Close_Result : Operation_Result;
       Projects : Quality_Manager.Storage.Entity_Vectors.Vector;
       Project : Quality_Manager.Identities.Project_Key;
-      Source  : Unbounded_String;
+      Source, Policy, Toolchain : Unbounded_String;
       Found   : Boolean := False;
-      Commit, Toolchain : Unbounded_String;
+      Commit : Unbounded_String;
       Args : Quality_Manager.Integrations.Processes.String_Vectors.Vector;
       Release_Id : Unbounded_String;
+      Quality : Quality_Manager.Integrations.Quality.Adapter;
+      Plan    : Quality_Manager.Integrations.JSON_CLI.Response;
    begin
-      Quality_Manager.Config.Load (Config_Path, Config_Required, Settings, Result);
+      if Profile /= "release" then
+         Result := Make_Result
+           (Invalid_Request, "the initial release qualifier requires the release profile",
+            "qm.release.profile");
+      else
+         Quality_Manager.Config.Load (Config_Path, Config_Required, Settings, Result);
+      end if;
+      if Result.Kind = Success and then Length (Settings.Quality_Database) = 0 then
+         Result := Make_Result
+           (Invalid_Request, "release creation requires an Ada Quality database",
+            "qm.release.quality-database");
+      end if;
       if Result.Kind = Success then
          Quality_Manager.Storage.Open (Store, To_String (Settings.Coordinator_Database), True, Result);
       end if;
@@ -704,16 +885,42 @@ package body Quality_Manager.Releases is
                   Project :=
                     (To_Unbounded_String (JSON_String (Payload, "quality_database_id")),
                      Positive (Id), To_Unbounded_String (Path));
-                  Source := To_Unbounded_String (JSON_String (Payload, "last_source_fingerprint"));
                end if;
             end;
          end loop;
          if Result.Kind = Success and then not Found then
             Result := Make_Result (Not_Found, "release project not found", "qm.release.selector");
-         elsif Result.Kind = Success and then Length (Source) = 0 then
-            Result := Make_Result
-              (Stale_Evidence, "release project has no observed source fingerprint", "qm.release.source");
          end if;
+      end if;
+      if Result.Kind = Success then
+         Quality_Manager.Integrations.Quality.Initialize
+           (Quality, To_String (Settings.Ada_Quality_Executable),
+            To_String (Settings.Quality_Database));
+         Quality_Manager.Integrations.Quality.Plan_Check
+           (Quality,
+            Ada.Strings.Fixed.Trim
+              (Positive'Image (Project.Quality_Project_Id), Ada.Strings.Both),
+            Profile, False, Plan);
+         Result := Plan.Status;
+      end if;
+      if Result.Kind = Success then
+         declare
+            Document : constant String := To_String (Plan.Document);
+         begin
+            Source := To_Unbounded_String (JSON_String (Document, "source_fingerprint"));
+            Policy := To_Unbounded_String (JSON_String (Document, "policy_fingerprint"));
+            Toolchain := To_Unbounded_String (JSON_String (Document, "toolchain_fingerprint"));
+            if JSON_Natural (Document, "project_id") /= Project.Quality_Project_Id
+              or else JSON_String (Document, "path") /= To_String (Project.Canonical_Path)
+              or else Length (Source) = 0
+              or else Length (Policy) = 0
+              or else Length (Toolchain) = 0
+            then
+               Result := Make_Result
+                 (Incompatible_Contract, "release assessment plan identity is incomplete or mismatched",
+                  "qm.release.plan");
+            end if;
+         end;
       end if;
       if Result.Kind = Success then
          Args.Append (To_Unbounded_String ("rev-parse"));
@@ -721,22 +928,10 @@ package body Quality_Manager.Releases is
          Execute_Simple ("git", Args, To_String (Project.Canonical_Path), Commit, Result);
       end if;
       if Result.Kind = Success then
-         Args.Clear;
-         Args.Append (To_Unbounded_String ("exec"));
-         Args.Append (To_Unbounded_String ("--"));
-         Args.Append (To_Unbounded_String ("gnatls"));
-         Args.Append (To_Unbounded_String ("--version"));
-         Execute_Simple ("alr", Args, To_String (Project.Canonical_Path), Toolchain, Result);
-      end if;
-      if Result.Kind = Success then
          Initialize (Item, Store'Unchecked_Access);
          Create
            (Item, Project, To_String (Commit), To_String (Source),
-            Quality_Manager.Identities.Canonical_Digest
-              ([Quality_Manager.Identities.Text_Value ("release-policy"),
-                Quality_Manager.Identities.Text_Value (Profile)]),
-            Quality_Manager.Identities.Canonical_Digest
-              ([Quality_Manager.Identities.Text_Value (To_String (Toolchain))]),
+            To_String (Policy), To_String (Toolchain),
             Quality_Manager.Identities.Canonical_Digest
               ([Quality_Manager.Identities.Text_Value ("release-config"),
                 Quality_Manager.Identities.Text_Value (Profile)]),
@@ -752,11 +947,53 @@ package body Quality_Manager.Releases is
    end Create_Configured;
 
    procedure Qualify (Release_Id : String) is
-      pragma Unreferenced (Release_Id);
    begin
-      raise Release_Error with
-        "release qualification requires current assessment and release-check evidence";
+      Qualify_Configured
+        (Release_Id, "config/quality-manager.toml", False);
    end Qualify;
+
+   procedure Qualify_Configured
+     (Release_Id      : String;
+      Config_Path     : String;
+      Config_Required : Boolean) is
+      Settings : Quality_Manager.Config.Settings;
+      Store    : aliased Quality_Manager.Storage.Store;
+      Item     : Context;
+      Quality  : Quality_Manager.Integrations.Quality.Adapter;
+      Decision   : Qualification_Decision;
+      Result, Close_Result : Operation_Result;
+   begin
+      if Release_Id = "" then
+         Result := Make_Result (Invalid_Request, "release identity is required", "qm.release.identity");
+      else
+         Quality_Manager.Config.Load (Config_Path, Config_Required, Settings, Result);
+      end if;
+      if Result.Kind = Success and then Length (Settings.Quality_Database) = 0 then
+         Result := Make_Result
+           (Invalid_Request, "release qualification requires an Ada Quality database",
+            "qm.release.quality-database");
+      end if;
+      if Result.Kind = Success then
+         Quality_Manager.Storage.Open
+           (Store, To_String (Settings.Coordinator_Database), True, Result);
+      end if;
+      if Result.Kind = Success then
+         Initialize (Item, Store'Unchecked_Access);
+         Quality_Manager.Integrations.Quality.Initialize
+           (Quality, To_String (Settings.Ada_Quality_Executable),
+            To_String (Settings.Quality_Database));
+         Qualify_With_Tools (Item, Quality, Release_Id, "alr", "git", Decision, Result);
+      end if;
+      if Quality_Manager.Storage.Is_Open (Store) then
+         Quality_Manager.Storage.Close (Store, Close_Result);
+         if Result.Kind = Success and then Close_Result.Kind /= Success then
+            Result := Close_Result;
+         end if;
+      end if;
+      if Result.Kind /= Success then
+         raise Release_Error with Message (Result);
+      end if;
+   end Qualify_Configured;
 
    procedure Export_Evidence (Release_Id : String; Output_Path : String) is
    begin
