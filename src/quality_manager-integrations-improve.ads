@@ -19,9 +19,11 @@ package Quality_Manager.Integrations.Improve is
      (Item : Adapter; Plan_Id : String; Revision : Positive; Content_SHA256 : String;
       Result : out JSON_CLI.Response);
    procedure Preflight_Publication
-     (Item : Adapter; Plan_Id, Task_Id : String; Result : out JSON_CLI.Response);
+     (Item : Adapter; Plan_Id : String; Revision : Positive; Task_Id : String;
+      Result : out JSON_CLI.Response);
    procedure Publish_Task
-     (Item : Adapter; Plan_Id, Task_Id : String; Result : out JSON_CLI.Response);
+     (Item : Adapter; Plan_Id : String; Revision : Positive; Task_Id : String;
+      Result : out JSON_CLI.Response);
    procedure Read_Task_State
      (Item : Adapter; Task_Id : String; Revision : Natural; Result : out JSON_CLI.Response);
    procedure Read_Plan_State (Item : Adapter; Plan_Id : String; Result : out JSON_CLI.Response);

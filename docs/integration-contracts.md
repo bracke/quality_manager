@@ -64,6 +64,10 @@ check for `report_type`; matching only `schema_version` is insufficient provenan
 mismatched complete-content fingerprint without mutation, while retaining the attended latest-revision form.
 Plan and approval JSON return the bound `content_sha256` value.
 
+**IMP-PUBLISH-01 implemented:** Improve commit `3590361` adds exact `apply --revision N` selection and returns the
+selected revision and `content_sha256` in publication JSON. Quality Manager requires this form for both preflight and
+publication, preventing a newer latest revision from being substituted after authorization.
+
 ## model_runner
 
 The public framework confirms Tasks.Ready, Tasks.Effective, Work.Plan_For, Work.Execute, Work.Take_In, Work.Cancel,

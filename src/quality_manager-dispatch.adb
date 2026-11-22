@@ -1,13 +1,20 @@
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Jsonlib.Documents;
+with Jsonlib.Errors;
+with Jsonlib.Parsers;
 with Quality_Manager.Integrations.JSON_CLI;
 with Quality_Manager.Journal;
+with Quality_Manager.Policies;
 with Quality_Manager.Storage.Records;
 
 package body Quality_Manager.Dispatch is
    use type Quality_Manager.Integrations.Runner.Execution_State;
+   use type Jsonlib.Documents.Value_Kind;
+   use type Interfaces.Unsigned_64;
    use type Quality_Manager.Identities.Operation_Id;
    use type Quality_Manager.Journal.Journal_State;
+   use type Quality_Manager.Model.Work_State;
    use type Quality_Manager.Results.Result_Kind;
    use type Quality_Manager.Storage.Record_Kind;
    use Quality_Manager.Results;
@@ -117,6 +124,491 @@ package body Quality_Manager.Dispatch is
               (Incompatible_Contract, "unknown journal state", "qm.dispatch.journal-state");
       end;
    end Read_Journal;
+
+   function String_Field
+     (Document : Jsonlib.Documents.Document;
+      Parent   : Jsonlib.Documents.Node;
+      Name     : String;
+      Value    : out Unbounded_String) return Boolean is
+      Node : constant Jsonlib.Documents.Node := Document.Member (Parent, Name);
+   begin
+      if not Jsonlib.Documents.Is_Present (Node)
+        or else Document.Kind (Node) /= Jsonlib.Documents.String_Value
+      then
+         Value := Null_Unbounded_String;
+         return False;
+      end if;
+      Value := To_Unbounded_String (Document.As_String (Node));
+      return True;
+   end String_Field;
+
+   function Natural_Field
+     (Document : Jsonlib.Documents.Document;
+      Parent   : Jsonlib.Documents.Node;
+      Name     : String;
+      Value    : out Natural) return Boolean is
+      Node   : constant Jsonlib.Documents.Node := Document.Member (Parent, Name);
+      Number : Long_Long_Integer;
+   begin
+      if not Jsonlib.Documents.Is_Present (Node)
+        or else Document.Kind (Node) /= Jsonlib.Documents.Integer_Value
+      then
+         Value := 0;
+         return False;
+      end if;
+      Number := Document.As_Integer (Node);
+      if Number not in 0 .. Long_Long_Integer (Natural'Last) then
+         Value := 0;
+         return False;
+      end if;
+      Value := Natural (Number);
+      return True;
+   end Natural_Field;
+
+   function Boolean_Field
+     (Document : Jsonlib.Documents.Document;
+      Parent   : Jsonlib.Documents.Node;
+      Name     : String;
+      Value    : out Boolean) return Boolean is
+      Node : constant Jsonlib.Documents.Node := Document.Member (Parent, Name);
+   begin
+      if not Jsonlib.Documents.Is_Present (Node)
+        or else Document.Kind (Node) /= Jsonlib.Documents.Boolean_Value
+      then
+         Value := False;
+         return False;
+      end if;
+      Value := Document.As_Boolean (Node);
+      return True;
+   end Boolean_Field;
+
+   procedure Decode_Approval
+     (Response : Quality_Manager.Integrations.JSON_CLI.Response;
+      Work     : Quality_Manager.Storage.Schema.Work_Item;
+      Result   : out Operation_Result) is
+      Document : Jsonlib.Documents.Document;
+      Error    : Jsonlib.Errors.Error_Info;
+      Version, Revision : Natural;
+      Command, Plan_Id, Content : Unbounded_String;
+      Approved : Boolean;
+   begin
+      if Response.Status.Kind /= Success then
+         Result := Response.Status;
+         return;
+      end if;
+      Jsonlib.Parsers.Parse
+        (To_String (Response.Document), Document, Error,
+         (Max_Depth => 16, Max_Length => 1_048_576,
+          Duplicates => Jsonlib.Parsers.Refuse_Duplicates));
+      if Jsonlib.Errors.Failed (Error) then
+         Result := Make_Result
+           (Incompatible_Contract, "invalid Improve approval JSON", "qm.dispatch.approval-json");
+         return;
+      end if;
+      declare
+         Root : constant Jsonlib.Documents.Node := Document.Root;
+         Data : constant Jsonlib.Documents.Node := Document.Member (Root, "data");
+      begin
+         if not Natural_Field (Document, Root, "schema_version", Version)
+           or else Version /= 2
+           or else not String_Field (Document, Root, "command", Command)
+           or else To_String (Command) /= "plan approve"
+           or else not Jsonlib.Documents.Is_Present (Data)
+           or else Document.Kind (Data) /= Jsonlib.Documents.Object_Value
+           or else not String_Field (Document, Data, "plan_id", Plan_Id)
+           or else Plan_Id /= Work.Improve_Plan_Id
+           or else not Natural_Field (Document, Data, "revision", Revision)
+           or else Revision /= Work.Improve_Revision
+           or else not String_Field (Document, Data, "content_sha256", Content)
+           or else Content /= Work.Improve_Content_SHA256
+           or else not Boolean_Field (Document, Data, "approved", Approved)
+           or else not Approved
+         then
+            Result := Make_Result
+              (Incompatible_Contract, "Improve approval does not match authorized work",
+               "qm.dispatch.approval-contract");
+            return;
+         end if;
+      end;
+      Result := Make_Result (Success);
+   end Decode_Approval;
+
+   procedure Decode_Publication
+     (Response : Quality_Manager.Integrations.JSON_CLI.Response;
+      Work     : Quality_Manager.Storage.Schema.Work_Item;
+      Dry_Run  : Boolean;
+      Native_Task : out Unbounded_String;
+      Result   : out Operation_Result) is
+      Document : Jsonlib.Documents.Document;
+      Error    : Jsonlib.Errors.Error_Info;
+      Version, Revision : Natural;
+      Command, Plan_Id, Content : Unbounded_String;
+      Actual_Dry_Run : Boolean;
+      Matches : Natural := 0;
+   begin
+      Native_Task := Null_Unbounded_String;
+      if Response.Status.Kind /= Success then
+         Result := Response.Status;
+         return;
+      end if;
+      Jsonlib.Parsers.Parse
+        (To_String (Response.Document), Document, Error,
+         (Max_Depth => 32, Max_Length => 4 * 1_024 * 1_024,
+          Duplicates => Jsonlib.Parsers.Refuse_Duplicates));
+      if Jsonlib.Errors.Failed (Error) then
+         Result := Make_Result
+           (Incompatible_Contract, "invalid Improve publication JSON", "qm.dispatch.publication-json");
+         return;
+      end if;
+      declare
+         Root  : constant Jsonlib.Documents.Node := Document.Root;
+         Data  : constant Jsonlib.Documents.Node := Document.Member (Root, "data");
+         Tasks : Jsonlib.Documents.Node;
+      begin
+         if not Natural_Field (Document, Root, "schema_version", Version)
+           or else Version /= 2
+           or else not String_Field (Document, Root, "command", Command)
+           or else To_String (Command) /= "apply"
+           or else not Jsonlib.Documents.Is_Present (Data)
+           or else Document.Kind (Data) /= Jsonlib.Documents.Object_Value
+           or else not String_Field (Document, Data, "plan_id", Plan_Id)
+           or else Plan_Id /= Work.Improve_Plan_Id
+           or else not Natural_Field (Document, Data, "revision", Revision)
+           or else Revision /= Work.Improve_Revision
+           or else not String_Field (Document, Data, "content_sha256", Content)
+           or else Content /= Work.Improve_Content_SHA256
+           or else not Boolean_Field (Document, Data, "dry_run", Actual_Dry_Run)
+           or else Actual_Dry_Run /= Dry_Run
+         then
+            Result := Make_Result
+              (Incompatible_Contract, "Improve publication identity is mismatched",
+               "qm.dispatch.publication-contract");
+            return;
+         end if;
+         Tasks := Document.Member (Data, "tasks");
+         if not Jsonlib.Documents.Is_Present (Tasks)
+           or else Document.Kind (Tasks) /= Jsonlib.Documents.Array_Value
+           or else Document.Length (Tasks) = 0
+           or else Document.Length (Tasks) > 100
+         then
+            Result := Make_Result
+              (Incompatible_Contract, "Improve publication task mapping is incomplete",
+               "qm.dispatch.publication-tasks");
+            return;
+         end if;
+         for Index in 1 .. Document.Length (Tasks) loop
+            declare
+               Node : constant Jsonlib.Documents.Node := Document.Element (Tasks, Index);
+               Improve_Task, Harness_Task : Unbounded_String;
+            begin
+               if Document.Kind (Node) /= Jsonlib.Documents.Object_Value
+                 or else not String_Field (Document, Node, "improve_task_id", Improve_Task)
+                 or else not String_Field (Document, Node, "harness_task_id", Harness_Task)
+               then
+                  Result := Make_Result
+                    (Incompatible_Contract, "Improve publication mapping is invalid",
+                     "qm.dispatch.publication-mapping");
+                  return;
+               end if;
+               if Improve_Task = Work.Improve_Task_Id then
+                  Matches := Matches + 1;
+                  Native_Task := Harness_Task;
+               end if;
+            end;
+         end loop;
+      end;
+      if Matches /= 1 or else Length (Native_Task) = 0 then
+         Result := Make_Result
+           (Incompatible_Contract, "Improve did not return one exact native task mapping",
+            "qm.dispatch.publication-selection");
+      else
+         Result := Make_Result (Success);
+      end if;
+   end Decode_Publication;
+
+   procedure Validate_Durable_Approval
+     (Store    : in out Quality_Manager.Storage.Store;
+      Approval : Quality_Manager.Storage.Schema.Approval;
+      Result   : out Operation_Result) is
+      Item : Quality_Manager.Storage.Stored_Entity;
+      Document : Jsonlib.Documents.Document;
+      Error : Jsonlib.Errors.Error_Info;
+      Plan_Id, Content, Action, Policy, Approver : Unbounded_String;
+      Database_Id, Path : Unbounded_String;
+      Revision, Project_Id : Natural;
+      Created, Expires : Interfaces.Unsigned_64 := 0;
+
+      function Unsigned_Field
+        (Parent : Jsonlib.Documents.Node; Name : String;
+         Value : out Interfaces.Unsigned_64) return Boolean is
+         Node : constant Jsonlib.Documents.Node := Document.Member (Parent, Name);
+         Number : Long_Long_Integer;
+      begin
+         if not Jsonlib.Documents.Is_Present (Node)
+           or else Document.Kind (Node) /= Jsonlib.Documents.Integer_Value
+         then
+            Value := 0;
+            return False;
+         end if;
+         Number := Document.As_Integer (Node);
+         if Number < 0 then
+            Value := 0;
+            return False;
+         end if;
+         Value := Interfaces.Unsigned_64 (Number);
+         return True;
+      end Unsigned_Field;
+   begin
+      Quality_Manager.Storage.Read
+        (Store, "approval:" & To_String (Approval.Approval_Id), Item, Result);
+      if Result.Kind /= Success then
+         if Result.Kind = Not_Found then
+            Result := Make_Result
+              (Authorization_Required, "approval is not durable", "qm.dispatch.approval-missing");
+         end if;
+         return;
+      elsif Item.Kind /= Quality_Manager.Storage.Approval_Record
+        or else To_String (Item.State) /= "APPROVED"
+      then
+         Result := Make_Result
+           (Integrity_Error, "approval storage record is invalid", "qm.dispatch.approval-record");
+         return;
+      end if;
+      Jsonlib.Parsers.Parse
+        (To_String (Item.Payload), Document, Error,
+         (Max_Depth => 16, Max_Length => 1_048_576,
+          Duplicates => Jsonlib.Parsers.Refuse_Duplicates));
+      if Jsonlib.Errors.Failed (Error) then
+         Result := Make_Result
+           (Integrity_Error, "durable approval is invalid JSON", "qm.dispatch.approval-storage-json");
+         return;
+      end if;
+      declare
+         Root : constant Jsonlib.Documents.Node := Document.Root;
+         Project : constant Jsonlib.Documents.Node := Document.Member (Root, "project");
+      begin
+         if Document.Kind (Root) /= Jsonlib.Documents.Object_Value
+           or else not Jsonlib.Documents.Is_Present (Project)
+           or else Document.Kind (Project) /= Jsonlib.Documents.Object_Value
+           or else not String_Field (Document, Project, "quality_database_id", Database_Id)
+           or else Database_Id /= Approval.Project.Quality_Database_Id
+           or else not Natural_Field (Document, Project, "quality_project_id", Project_Id)
+           or else Project_Id /= Approval.Project.Quality_Project_Id
+           or else not String_Field (Document, Project, "canonical_path", Path)
+           or else Path /= Approval.Project.Canonical_Path
+           or else not String_Field (Document, Root, "plan_id", Plan_Id)
+           or else Plan_Id /= Approval.Plan_Id
+           or else not Natural_Field (Document, Root, "plan_revision", Revision)
+           or else Revision /= Approval.Plan_Revision
+           or else not String_Field (Document, Root, "content_digest", Content)
+           or else Content /= Approval.Content_Digest
+           or else not String_Field (Document, Root, "action", Action)
+           or else Action /= Approval.Authorized_Action
+           or else not String_Field (Document, Root, "policy_digest", Policy)
+           or else Policy /= Approval.Policy_Digest
+           or else not String_Field (Document, Root, "approver", Approver)
+           or else Approver /= Approval.Approver
+           or else not Unsigned_Field (Root, "created_at", Created)
+           or else Created /= Approval.Created_At
+           or else not Unsigned_Field (Root, "expires_at", Expires)
+           or else Expires /= Approval.Expires_At
+         then
+            Result := Make_Result
+              (Integrity_Error, "durable approval does not match the supplied authorization",
+               "qm.dispatch.approval-storage-mismatch");
+            return;
+         end if;
+      end;
+      Result := Make_Result (Success);
+   end Validate_Durable_Approval;
+
+   procedure Publish_Approved
+     (Store     : in out Quality_Manager.Storage.Store;
+      Planner   : Quality_Manager.Integrations.Improve.Adapter;
+      Work      : Quality_Manager.Storage.Schema.Work_Item;
+      Approval  : Quality_Manager.Storage.Schema.Approval;
+      Now       : Interfaces.Unsigned_64;
+      Published : out Quality_Manager.Storage.Schema.Dispatch;
+      Result    : out Operation_Result) is
+      Dispatch_Id : constant String := Quality_Manager.Identities.Dispatch_Identity
+        (To_String (Work.Work_Id), To_String (Work.Improve_Plan_Id),
+         (if Work.Improve_Revision = 0 then 1 else Positive (Work.Improve_Revision)),
+         To_String (Work.Improve_Task_Id));
+      Approval_Operation : constant Quality_Manager.Identities.Operation_Id :=
+        Quality_Manager.Identities.Operation_Identity ("improve-approval", To_String (Work.Work_Id));
+      Publish_Operation : constant Quality_Manager.Identities.Operation_Id :=
+        Quality_Manager.Identities.Operation_Identity ("improve-publication", To_String (Work.Work_Id));
+      Approval_Intent : constant String := Quality_Manager.Identities.Canonical_Digest
+        ([Quality_Manager.Identities.Text_Value ("improve-approval-v1"),
+          Quality_Manager.Identities.Text_Value (To_String (Work.Improve_Plan_Id)),
+          Quality_Manager.Identities.Number_Value (Interfaces.Unsigned_64 (Work.Improve_Revision)),
+          Quality_Manager.Identities.Text_Value (To_String (Work.Improve_Content_SHA256)),
+          Quality_Manager.Identities.Text_Value (To_String (Approval.Approval_Id))]);
+      Publication_Intent : constant String := Quality_Manager.Identities.Canonical_Digest
+        ([Quality_Manager.Identities.Text_Value ("improve-publication-v1"),
+          Quality_Manager.Identities.Text_Value (Dispatch_Id),
+          Quality_Manager.Identities.Text_Value (To_String (Work.Improve_Task_Id))]);
+      Journal_Item : Quality_Manager.Storage.Stored_Entity;
+      State : Quality_Manager.Journal.Journal_State;
+      Response : Quality_Manager.Integrations.JSON_CLI.Response;
+      Native_Task, Ignored_Task : Unbounded_String;
+
+      procedure Ensure_Journal
+        (Operation : Quality_Manager.Identities.Operation_Id;
+         Kind, Intent, External_Id : String) is
+      begin
+         Read_Journal (Store, Operation, Journal_Item, State, Result);
+         if Result.Kind = Not_Found then
+            Quality_Manager.Storage.Prepare_Operation
+              (Store, Operation, Kind, Intent, External_Id, Result);
+            State := Quality_Manager.Journal.Prepared;
+         elsif Result.Kind = Success
+           and then not Has_Exact_Intent (Journal_Item, Intent, External_Id)
+         then
+            Result := Make_Result
+              (Integrity_Error, "operation identity is bound to another Improve intent",
+               "qm.dispatch.improve-intent");
+         elsif Result.Kind = Success
+           and then State in Quality_Manager.Journal.Aborted | Quality_Manager.Journal.Needs_Intervention
+         then
+            Result := Make_Result
+              (Authorization_Required, "Improve operation is terminally blocked",
+               "qm.dispatch.improve-terminal");
+         end if;
+      end Ensure_Journal;
+
+      procedure Commit_Journal
+        (Operation : Quality_Manager.Identities.Operation_Id;
+         External_Id, Diagnostic : String) is
+      begin
+         if State = Quality_Manager.Journal.Invoking then
+            Quality_Manager.Storage.Advance_Operation
+              (Store, Operation, State, Quality_Manager.Journal.Reconciling,
+               External_Id, Diagnostic, Result);
+            State := Quality_Manager.Journal.Reconciling;
+         end if;
+         if Result.Kind = Success and then State = Quality_Manager.Journal.Reconciling then
+            Quality_Manager.Storage.Advance_Operation
+              (Store, Operation, State, Quality_Manager.Journal.Committed,
+               External_Id, Diagnostic, Result);
+            State := Quality_Manager.Journal.Committed;
+         end if;
+      end Commit_Journal;
+   begin
+      Published :=
+        (Dispatch_Id => Null_Unbounded_String, Work_Id => Null_Unbounded_String,
+         Logical_Remediation => Null_Unbounded_String,
+         Improve_Task => (Null_Unbounded_String, 1, Null_Unbounded_String),
+         Native_Task_Id => Null_Unbounded_String, Authorization_Id => Null_Unbounded_String,
+         State => Quality_Manager.Model.Published, Active => False);
+      if Work.Improve_Revision = 0
+        or else Length (Work.Work_Id) = 0
+        or else Length (Work.Improve_Plan_Id) = 0
+        or else Length (Work.Improve_Task_Id) = 0
+        or else Length (Work.Improve_Content_SHA256) = 0
+        or else Length (Work.Effective_Policy_Digest) = 0
+        or else Work.State not in Quality_Manager.Model.Awaiting_Approval |
+                                  Quality_Manager.Model.Publishable |
+                                  Quality_Manager.Model.Publishing |
+                                  Quality_Manager.Model.Published
+      then
+         Result := Make_Result
+           (Invalid_Request, "publication work is incomplete or ineligible", "qm.dispatch.publication-work");
+         return;
+      end if;
+      Validate_Durable_Approval (Store, Approval, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Quality_Manager.Policies.Validate_Approval
+        (Approval, Work.Project, To_String (Work.Improve_Plan_Id), Positive (Work.Improve_Revision),
+         To_String (Work.Improve_Content_SHA256), "publish", To_String (Work.Effective_Policy_Digest), Now, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+
+      if Work.State = Quality_Manager.Model.Awaiting_Approval then
+         Ensure_Journal
+           (Approval_Operation, "improve-exact-approval", Approval_Intent,
+            "improve-approval:" & To_String (Work.Improve_Plan_Id));
+         if Result.Kind /= Success then return; end if;
+         if State = Quality_Manager.Journal.Prepared then
+            Quality_Manager.Storage.Advance_Operation
+              (Store, Approval_Operation, State, Quality_Manager.Journal.Invoking,
+               "improve-approval:" & To_String (Work.Improve_Plan_Id), "", Result);
+            State := Quality_Manager.Journal.Invoking;
+         end if;
+         if Result.Kind /= Success then return; end if;
+         Quality_Manager.Integrations.Improve.Approve_Exact_Revision
+           (Planner, To_String (Work.Improve_Plan_Id), Positive (Work.Improve_Revision),
+            To_String (Work.Improve_Content_SHA256), Response);
+         Decode_Approval (Response, Work, Result);
+         if Result.Kind /= Success then return; end if;
+         Commit_Journal
+           (Approval_Operation, "improve-approval:" & To_String (Work.Improve_Plan_Id),
+            "exact Improve approval confirmed");
+         if Result.Kind /= Success then return; end if;
+         Quality_Manager.Storage.Transition_Work
+           (Store, To_String (Work.Work_Id), Quality_Manager.Model.Awaiting_Approval,
+            Quality_Manager.Model.Publishable, "event:" & To_String (Work.Work_Id) & ":publishable",
+            "exact approval confirmed", To_String (Approval.Approval_Id), Result);
+         if Result.Kind /= Success then return; end if;
+      end if;
+
+      if Work.State in Quality_Manager.Model.Awaiting_Approval | Quality_Manager.Model.Publishable then
+         Quality_Manager.Integrations.Improve.Preflight_Publication
+           (Planner, To_String (Work.Improve_Plan_Id), Positive (Work.Improve_Revision),
+            To_String (Work.Improve_Task_Id), Response);
+         Decode_Publication (Response, Work, True, Ignored_Task, Result);
+         if Result.Kind /= Success then return; end if;
+         Quality_Manager.Storage.Transition_Work
+           (Store, To_String (Work.Work_Id), Quality_Manager.Model.Publishable,
+            Quality_Manager.Model.Publishing, "event:" & To_String (Work.Work_Id) & ":publishing",
+            "Improve publication preflight passed", To_String (Work.Improve_Task_Id), Result);
+         if Result.Kind /= Success then return; end if;
+      end if;
+
+      Ensure_Journal
+        (Publish_Operation, "improve-publication", Publication_Intent,
+         "improve-publication:" & Dispatch_Id);
+      if Result.Kind /= Success then return; end if;
+      if State = Quality_Manager.Journal.Prepared then
+         Quality_Manager.Storage.Advance_Operation
+           (Store, Publish_Operation, State, Quality_Manager.Journal.Invoking,
+            "improve-publication:" & Dispatch_Id, "", Result);
+         State := Quality_Manager.Journal.Invoking;
+      end if;
+      if Result.Kind /= Success then return; end if;
+      Quality_Manager.Integrations.Improve.Publish_Task
+        (Planner, To_String (Work.Improve_Plan_Id), Positive (Work.Improve_Revision),
+         To_String (Work.Improve_Task_Id), Response);
+      Decode_Publication (Response, Work, False, Native_Task, Result);
+      if Result.Kind /= Success then return; end if;
+      Commit_Journal
+        (Publish_Operation, "improve-publication:" & Dispatch_Id,
+         "native task mapping confirmed");
+      if Result.Kind /= Success then return; end if;
+      Published :=
+        (Dispatch_Id => To_Unbounded_String (Dispatch_Id), Work_Id => Work.Work_Id,
+         Logical_Remediation => Work.Global_Remediation,
+         Improve_Task =>
+           (Plan_Id => Work.Improve_Plan_Id, Revision => Positive (Work.Improve_Revision),
+            Task_Id => Work.Improve_Task_Id),
+         Native_Task_Id => Native_Task, Authorization_Id => Approval.Approval_Id,
+         State => Quality_Manager.Model.Published, Active => True);
+      Bind_Published_Task (Store, Published, Result);
+      if Result.Kind /= Success then return; end if;
+      if Work.State /= Quality_Manager.Model.Published then
+         Quality_Manager.Storage.Transition_Work
+           (Store, To_String (Work.Work_Id), Quality_Manager.Model.Publishing,
+            Quality_Manager.Model.Published, "event:" & To_String (Work.Work_Id) & ":published",
+            "Improve native task mapping adopted", To_String (Native_Task), Result);
+      end if;
+   exception
+      when Constraint_Error =>
+         Result := Make_Result
+           (Invalid_Request, "publication identity is out of range", "qm.dispatch.publication-range");
+   end Publish_Approved;
 
    procedure Mark_Intervention
      (Store       : in out Quality_Manager.Storage.Store;

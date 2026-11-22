@@ -284,3 +284,8 @@ and GNATprove failed. Source changes made during the long-running check also cau
 differ from the persisted invocation intent. Exact manual reconciliation therefore rejected the run, moved the work
 to `Blocked`, and closed the journal as `Aborted`; the recovery queue is now empty. The coordinator cannot claim
 compliance, and the environment still needs repair before the multi-project P11-06 record can pass.
+
+Journaled authorized publication is implemented. It requires a durable coordinator approval matching project, plan
+revision, complete content fingerprint, action, policy, and lifetime; confirms Improve's atomic approval; preflights
+and publishes the exact revision; persists the authoritative native task mapping; and safely replays both external
+operations. Fixture-backed acceptance coverage passes; live publication still requires an applicable approved plan.

@@ -33,6 +33,12 @@ interactive latest-revision form.
 Status: **implemented and validated** in Improve commit `e3c3b08`. Exact latest approval, stale-revision rejection,
 content-mismatch rejection, versioned JSON, generated CLI assets, all 135 tests, and the forced validation build pass.
 
+## IMP-PUBLISH-01 — Exact revision publication
+
+Status: **implemented and validated** in Improve commit `3590361`. External coordinators can require
+`improve apply PLAN-ID --revision N`; preflight and publication load that immutable revision, and JSON returns its
+exact revision and complete content fingerprint. All 135 tests and the forced validation build pass.
+
 ## MR-HEADLESS-01 — Noninteractive native work
 
 Add versioned JSON commands:

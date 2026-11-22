@@ -1,5 +1,6 @@
 with Interfaces;
 with Quality_Manager.Identities;
+with Quality_Manager.Integrations.Improve;
 with Quality_Manager.Integrations.Runner;
 with Quality_Manager.Model;
 with Quality_Manager.Results;
@@ -18,6 +19,15 @@ package Quality_Manager.Dispatch is
      (Store    : in out Quality_Manager.Storage.Store;
       Dispatch : Quality_Manager.Storage.Schema.Dispatch;
       Result   : out Quality_Manager.Results.Operation_Result);
+
+   procedure Publish_Approved
+     (Store     : in out Quality_Manager.Storage.Store;
+      Planner   : Quality_Manager.Integrations.Improve.Adapter;
+      Work      : Quality_Manager.Storage.Schema.Work_Item;
+      Approval  : Quality_Manager.Storage.Schema.Approval;
+      Now       : Interfaces.Unsigned_64;
+      Published : out Quality_Manager.Storage.Schema.Dispatch;
+      Result    : out Quality_Manager.Results.Operation_Result);
 
    procedure Execute_Or_Reconcile
      (Store                     : in out Quality_Manager.Storage.Store;

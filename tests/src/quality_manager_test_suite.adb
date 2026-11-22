@@ -1539,11 +1539,19 @@ package body Quality_Manager_Test_Suite is
                "plan approve PLAN-001 --revision 2 --content-sha256 content-digest") > 0,
             "autonomous approval invokes the atomic exact revision contract");
          Quality_Manager.Integrations.Improve.Preflight_Publication
-           (Improve_Adapter, "PLAN-001", "IMP-001", Response);
-         Assert (Response.Status.Kind = Quality_Manager.Results.Success, "Improve preflight is exposed");
+           (Improve_Adapter, "PLAN-001", 2, "IMP-001", Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index
+              (To_String (Response.Document), "apply PLAN-001 --revision 2 --task IMP-001 --dry-run") > 0,
+            "Improve preflight binds the exact plan revision");
          Quality_Manager.Integrations.Improve.Publish_Task
-           (Improve_Adapter, "PLAN-001", "IMP-001", Response);
-         Assert (Response.Status.Kind = Quality_Manager.Results.Success, "Improve publication is exposed");
+           (Improve_Adapter, "PLAN-001", 2, "IMP-001", Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index
+              (To_String (Response.Document), "apply PLAN-001 --revision 2 --task IMP-001") > 0,
+            "Improve publication binds the exact plan revision");
          Quality_Manager.Integrations.Improve.Read_Task_State
            (Improve_Adapter, "IMP-001", 2, Response);
          Assert (Response.Status.Kind = Quality_Manager.Results.Success, "Improve task state is exposed");
@@ -1697,6 +1705,93 @@ package body Quality_Manager_Test_Suite is
       Assert (Response.Status.Kind = Quality_Manager.Results.Temporarily_Unavailable,
               "JSON CLI reports process deadlines");
    end Test_JSON_CLI_Contracts;
+
+   procedure Test_Authorized_Publication (Item : in out Fixture) is
+      pragma Unreferenced (Item);
+      Path : constant String := "/tmp/quality-manager-publication.database";
+      Store : Quality_Manager.Storage.Store;
+      Planner : Quality_Manager.Integrations.Improve.Adapter;
+      Result : Quality_Manager.Results.Operation_Result;
+      Loaded : Quality_Manager.Storage.Stored_Entity;
+      Project : constant Quality_Manager.Identities.Project_Key :=
+        (To_Unbounded_String ("database-a"), 7, To_Unbounded_String ("/project"));
+      Work : Quality_Manager.Storage.Schema.Work_Item :=
+        (Work_Id => To_Unbounded_String ("work:publication"),
+         Global_Remediation => To_Unbounded_String ("remediation:publication"),
+         Project => Project, Origin => Quality_Manager.Model.Maintenance,
+         Finding_Identities => To_Unbounded_String ("AQ-01"), Priority => 200,
+         Improve_Plan_Id => To_Unbounded_String ("PLAN-001"), Improve_Revision => 1,
+         Improve_Task_Id => To_Unbounded_String ("IMP-001"),
+         Improve_Content_SHA256 => To_Unbounded_String
+           ("plan-content-sha256-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+         Effective_Policy_Digest => To_Unbounded_String ("policy-1"),
+         State => Quality_Manager.Model.Awaiting_Approval,
+         Outcome => Quality_Manager.Model.Authorization_Required);
+      Approval : constant Quality_Manager.Storage.Schema.Approval :=
+        (Approval_Id => To_Unbounded_String ("approval-publication"), Project => Project,
+         Plan_Id => To_Unbounded_String ("PLAN-001"), Plan_Revision => 1,
+         Content_Digest => Work.Improve_Content_SHA256,
+         Authorized_Action => To_Unbounded_String ("publish"),
+         Policy_Digest => To_Unbounded_String ("policy-1"),
+         Approver => To_Unbounded_String ("release-manager"), Created_At => 1, Expires_At => 100);
+      Published : Quality_Manager.Storage.Schema.Dispatch;
+      Journals  : Quality_Manager.Storage.Entity_Vectors.Vector;
+
+      procedure Cleanup is
+      begin
+         if Ada.Directories.Exists (Path) then Ada.Directories.Delete_File (Path); end if;
+      end Cleanup;
+   begin
+      Cleanup;
+      Quality_Manager.Storage.Open (Store, Path, True, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "publication store opens");
+      Quality_Manager.Storage.Records.Save (Store, Work, Result);
+      Quality_Manager.Integrations.Improve.Initialize
+        (Planner, "./bin/qm_adapter_fixture", "improve.toml", "quality.db", "improve.db");
+      Quality_Manager.Dispatch.Publish_Approved
+        (Store, Planner, Work, Approval, 50, Published, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Authorization_Required,
+         "an in-memory approval cannot bypass durable authorization");
+      Quality_Manager.Storage.Records.Save (Store, Approval, Result);
+      Quality_Manager.Dispatch.Publish_Approved
+        (Store, Planner, Work, Approval, 50, Published, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Published.Native_Task_Id) = "TASK-001"
+         and then To_String (Published.Authorization_Id) = "approval-publication",
+         "authorized publication retains Improve's native mapping");
+      Quality_Manager.Storage.Read (Store, "work:publication", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Loaded.State) = Quality_Manager.Model.Published'Image,
+         "authorized publication reaches the published coordinator state");
+      Quality_Manager.Storage.Read
+        (Store, "active-dispatch:" & To_String (Work.Global_Remediation), Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Ada.Strings.Fixed.Index (To_String (Loaded.Payload), "TASK-001") > 0,
+         "authoritative native mapping is persisted as the active dispatch");
+      Quality_Manager.Storage.List
+        (Store, Quality_Manager.Storage.Journal_Record, Journals, 10, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Natural (Journals.Length) = 2
+         and then (for all Journal of Journals =>
+           To_String (Journal.State) = Quality_Manager.Journal.Committed'Image),
+         "approval and publication side effects both commit durable journals");
+      Work.State := Quality_Manager.Model.Published;
+      Quality_Manager.Dispatch.Publish_Approved
+        (Store, Planner, Work, Approval, 50, Published, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "publication replay is idempotent");
+      Quality_Manager.Storage.Close (Store, Result);
+      Cleanup;
+   exception
+      when others =>
+         Quality_Manager.Storage.Close (Store, Result);
+         Cleanup;
+         raise;
+   end Test_Authorized_Publication;
 
    procedure Test_Native_Dispatch (Item : in out Fixture) is
       pragma Unreferenced (Item);
@@ -3696,6 +3791,7 @@ package body Quality_Manager_Test_Suite is
       Result.Add_Test (Caller.Create ("corrupt storage", Test_Corrupt_Storage'Access));
       Result.Add_Test (Caller.Create ("bounded process adapter", Test_Process_Adapter'Access));
       Result.Add_Test (Caller.Create ("JSON CLI contracts", Test_JSON_CLI_Contracts'Access));
+      Result.Add_Test (Caller.Create ("authorized publication", Test_Authorized_Publication'Access));
       Result.Add_Test (Caller.Create ("durable native dispatch", Test_Native_Dispatch'Access));
       Result.Add_Test (Caller.Create ("independent verification", Test_Verification_Engine'Access));
       Result.Add_Test (Caller.Create ("verification workflow", Test_Verification_Workflow'Access));

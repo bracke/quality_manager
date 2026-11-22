@@ -89,10 +89,13 @@ package body Quality_Manager.Integrations.Improve is
    end Approve_Exact_Revision;
 
    procedure Publication
-     (Item : Adapter; Plan_Id, Task_Id : String; Dry_Run : Boolean; Result : out JSON_CLI.Response) is
+     (Item : Adapter; Plan_Id : String; Revision : Positive; Task_Id : String;
+      Dry_Run : Boolean; Result : out JSON_CLI.Response) is
       Args : Processes.String_Vectors.Vector;
    begin
       Args.Append (To_Unbounded_String ("apply")); Args.Append (To_Unbounded_String (Plan_Id));
+      Args.Append (To_Unbounded_String ("--revision"));
+      Args.Append (To_Unbounded_String (Image (Revision)));
       if Task_Id /= "" then
          Args.Append (To_Unbounded_String ("--task")); Args.Append (To_Unbounded_String (Task_Id));
       end if;
@@ -101,11 +104,13 @@ package body Quality_Manager.Integrations.Improve is
    end Publication;
 
    procedure Preflight_Publication
-     (Item : Adapter; Plan_Id, Task_Id : String; Result : out JSON_CLI.Response) is
-   begin Publication (Item, Plan_Id, Task_Id, True, Result); end Preflight_Publication;
+     (Item : Adapter; Plan_Id : String; Revision : Positive; Task_Id : String;
+      Result : out JSON_CLI.Response) is
+   begin Publication (Item, Plan_Id, Revision, Task_Id, True, Result); end Preflight_Publication;
    procedure Publish_Task
-     (Item : Adapter; Plan_Id, Task_Id : String; Result : out JSON_CLI.Response) is
-   begin Publication (Item, Plan_Id, Task_Id, False, Result); end Publish_Task;
+     (Item : Adapter; Plan_Id : String; Revision : Positive; Task_Id : String;
+      Result : out JSON_CLI.Response) is
+   begin Publication (Item, Plan_Id, Revision, Task_Id, False, Result); end Publish_Task;
 
    procedure Read_Task_State
      (Item : Adapter; Task_Id : String; Revision : Natural; Result : out JSON_CLI.Response) is

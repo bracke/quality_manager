@@ -125,6 +125,23 @@ begin
                   """approved"":true,""invocation"":""" & To_String (Invocation) & """}}");
                Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
                return;
+            elsif Ada.Strings.Fixed.Index (Text, "apply PLAN-001 ") = 1
+              and then Ada.Strings.Fixed.Index (Text, "--task IMP-001") > 0
+            then
+               Ada.Text_IO.Put
+                 ("{""schema_version"":2,""command"":""apply"",""data"":{" &
+                  """plan_id"":""PLAN-001"",""revision"":1," &
+                  """content_sha256"":""plan-content-sha256-v2:" &
+                  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""," &
+                  """task_kind"":""remediation""," &
+                  """dry_run"":" &
+                  (if Ada.Strings.Fixed.Index (Text, "--dry-run") > 0 then "true" else "false") &
+                  ",""tasks"":[{""improve_task_id"":""IMP-001""," &
+                  """harness_task_id"":""TASK-001"",""origin"":""fixture-origin""," &
+                  """state"":""ready"",""core_state"":""ready"",""recovered"":false}]," &
+                  """invocation"":""" & To_String (Invocation) & """}}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
             elsif Ada.Strings.Fixed.Index (Text, "doctor ") = 1 then
                Kind := To_Unbounded_String ("doctor-report");
             elsif Text = "database stats" then
