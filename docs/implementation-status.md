@@ -302,11 +302,19 @@ release checker remain unavailable. P11-06 now has a genuine multi-project execu
 until those measurement gaps and assessment 7 are resolved.
 
 Two isolated retries reproduced the `improve` interruption as assessments 11 and 12. The supported Ada Quality CLI
-reported the exact cause: `improve/alire.toml` contains development pins to sibling directories, and those paths would
-escape Ada Quality's isolated staging container. The pin-free `improve/alire.release.toml` is intentionally a distinct
-publication manifest whose dependencies are not yet available from the configured indexes. Quality Manager therefore
-keeps this project at `Needs_Intervention`; it must not weaken workspace isolation or silently substitute a different
-manifest to make the assessment pass.
+reported that transitive development pins containing multiple parent components were rejected before their normalized
+staged destination was checked. Ada Quality commit `a1111a1` now validates canonical containment in the private
+staging root, preserving isolation while accepting legitimate nested pins. The full upstream test action, forced
+production build, and GNATdoc generation passed. Live assessment 13 then completed with source fingerprint
+`56d874a4f119e656`, and Quality Manager adopted it as `Inconclusive` because required evidence remained unavailable.
+
+Assessment 13 also showed that the pinned `model_runner/framework` Alire subcrate depends on sibling files from the
+same VCS source layout. Ada Quality commit `3f3942f` now stages the bounded repository source closure for such subcrate
+pins while excluding VCS metadata and generated artifacts. Live assessment 14 completed with the same exact source and
+toolchain fingerprints. Its build, validation build, AUnit suite, deterministic rerun, GNATdoc, and dependency gates
+all executed successfully. Quality Manager correctly retained `Inconclusive`: production coverage is not a complete
+inventory, the release checker is absent from the clean staged build, and measured warning, source, documentation, and
+proof violations remain. These are now quality/evidence results rather than orchestration or staging failures.
 
 Journaled authorized publication is implemented. It requires a durable coordinator approval matching project, plan
 revision, complete content fingerprint, action, policy, and lifetime; confirms Improve's atomic approval; preflights

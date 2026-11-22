@@ -26,6 +26,18 @@ Status: **implemented and validated** in Ada Quality commit `4ee421b`. The canon
 passed. A live Quality Manager database mutation left the `quality_manager` source fingerprint unchanged at
 `e4830d6b7ca287b1`; assessment 10 and the subsequent dry-run plan retained that exact identity.
 
+## AQ-STAGE-01 — Preserve nested local-pin layouts
+
+Ada Quality's isolated workspace must accept nested local pins whose lexical `..` components still normalize inside
+the private staging root. Validate the canonical staged destination instead of limiting the number of parent
+components, while continuing to reject absolute paths, symbolic-link targets, and true container escapes.
+
+Status: **implemented and validated** in Ada Quality commits `a1111a1` and `3f3942f`. The regression fixtures cover a
+transitive two-level parent path, a pinned VCS subcrate whose GPR imports sibling source, and the existing malicious
+escape case. Pinned subcrates retain their bounded repository layout while VCS metadata and generated artifacts remain
+excluded. The full Ada Quality test action, forced production build, GNATdoc generation, and live `improve` assessment
+passed the staging boundary.
+
 ## AQS-PAGE-01 — Complete Summary enumeration
 
 Add snapshot-bound cursor pagination to collection JSON or a typed API returning the complete bounded report. Cursors
