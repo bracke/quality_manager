@@ -42,7 +42,7 @@ or a proven configured maximum above every possible result set.
 
 Improve declares its CLI and versioned JSON as the external contract. Confirmed commands are:
 
-    plan --project PROJECT
+    plan --project PROJECT [--run RUN]
     plan show PLAN-ID [--revision N]
     plan approve PLAN-ID
     apply PLAN-ID [--task IMP-ID] [--dry-run]
@@ -53,6 +53,8 @@ Improve declares its CLI and versioned JSON as the external contract. Confirmed 
 
 JSON envelope version 2 and stable IMP-E-* diagnostics are authoritative. Publication is approval-gated, journaled,
 provenance-qualified, and adopts matching native tasks. Verification keeps native state separate from quality.
+Coordinator-generated plans always supply `--run` and reject a response whose project, baseline run, or source
+fingerprint does not match the selected assessment contract.
 
 Coordinator adapters additionally validate the response `command` discriminator. Summary adapters perform the same
 check for `report_type`; matching only `schema_version` is insufficient provenance for either interface.

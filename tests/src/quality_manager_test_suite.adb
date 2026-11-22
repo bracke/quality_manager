@@ -112,6 +112,10 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Config.Load (Base_Path, True, Settings, Result);
       Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "empty Ada Quality executable is rejected");
 
+      Write_Text ("[integrations]" & ASCII.LF & "improve = """"" & ASCII.LF);
+      Quality_Manager.Config.Load (Base_Path, True, Settings, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "empty Improve executable is rejected");
+
       Write_Text ("[coordinator]" & ASCII.LF & "database = """"" & ASCII.LF);
       Quality_Manager.Config.Load (Base_Path, True, Settings, Result);
       Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "empty coordinator path is rejected");
@@ -121,6 +125,9 @@ package body Quality_Manager_Test_Suite is
          & "[quality]" & ASCII.LF & "database = ""/tmp/quality.db""" & ASCII.LF
          & "policy = ""/tmp/quality-policy.toml""" & ASCII.LF
          & "[integrations]" & ASCII.LF & "ada_quality = ""ada-quality-fixture""" & ASCII.LF
+         & "improve = ""improve-fixture""" & ASCII.LF
+         & "improve_config = ""/tmp/improve.toml""" & ASCII.LF
+         & "improve_state = ""/tmp/improve.db""" & ASCII.LF
          & "model_runner = ""model-runner-fixture""" & ASCII.LF
          & "[scheduler]" & ASCII.LF & "assessment_workers = 3" & ASCII.LF
          & "agent_workers = 2" & ASCII.LF & "maximum_task_seconds = 120" & ASCII.LF
@@ -134,6 +141,9 @@ package body Quality_Manager_Test_Suite is
          and then Settings.Maximum_Task_Seconds = 120
          and then Settings.Remediation_Attempts = 4
          and then To_String (Settings.Quality_Policy) = "/tmp/quality-policy.toml"
+         and then To_String (Settings.Improve_Executable) = "improve-fixture"
+         and then To_String (Settings.Improve_Config) = "/tmp/improve.toml"
+         and then To_String (Settings.Improve_State) = "/tmp/improve.db"
          and then not Settings.Dry_Run,
          "complete valid configuration is retained");
 
@@ -1490,8 +1500,12 @@ package body Quality_Manager_Test_Suite is
             and then Ada.Strings.Fixed.Index
               (To_String (Response.Document), "plan show PLAN-001 --revision 2") > 0,
             "Improve exact-revision command uses schema version 2");
-         Quality_Manager.Integrations.Improve.Generate_Plan (Improve_Adapter, "7", Response);
-         Assert (Response.Status.Kind = Quality_Manager.Results.Success, "Improve planning is exposed");
+         Quality_Manager.Integrations.Improve.Generate_Plan (Improve_Adapter, "7", 4, Response);
+         Assert
+           (Response.Status.Kind = Quality_Manager.Results.Success
+            and then Ada.Strings.Fixed.Index
+              (To_String (Response.Document), "plan --project 7 --run 4") > 0,
+            "Improve planning binds the exact assessment run");
          Quality_Manager.Integrations.Improve.Inspect_Approval
            (Improve_Adapter, "PLAN-001", 2, Response);
          Assert (Response.Status.Kind = Quality_Manager.Results.Success, "Improve approval inspection is exposed");

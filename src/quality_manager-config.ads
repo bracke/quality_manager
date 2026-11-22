@@ -7,6 +7,9 @@ package Quality_Manager.Config is
       Quality_Database      : Ada.Strings.Unbounded.Unbounded_String;
       Quality_Policy        : Ada.Strings.Unbounded.Unbounded_String;
       Ada_Quality_Executable : Ada.Strings.Unbounded.Unbounded_String;
+      Improve_Executable    : Ada.Strings.Unbounded.Unbounded_String;
+      Improve_Config        : Ada.Strings.Unbounded.Unbounded_String;
+      Improve_State         : Ada.Strings.Unbounded.Unbounded_String;
       Model_Runner_Executable : Ada.Strings.Unbounded.Unbounded_String;
       Assessment_Workers    : Positive := 4;
       Agent_Workers         : Positive := 1;

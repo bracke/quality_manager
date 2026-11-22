@@ -65,7 +65,7 @@ Representation dependencies; Quality Manager units compile without warnings.
 | P3-03 identity and freshness | complete | schema-6 UUID contract; canonical UUID validation and fail-closed tests |
 | P3-04 exact comparison | complete | explicit `assessment diff BASE CURRENT` invocation |
 | P3-05 Summary reports | complete | version-1 summary/problems/regressions/indicators/trends/project adapters |
-| P3-06 planning and revision inspection | complete | version-2 plan/create/show exact-revision adapters |
+| P3-06 planning and revision inspection | complete | exact-run plan/create and exact-revision show adapters |
 | P3-07 approval and publication inspection | complete, approval-fenced | exact plan inspection; autonomous approval returns compatibility error |
 | P3-08 publication and recovery | complete | Improve preflight/apply/recover adapters |
 | P3-09 task and project verification | complete | task/project verification requires exact revision and assessment |

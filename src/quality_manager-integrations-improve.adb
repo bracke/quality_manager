@@ -9,14 +9,17 @@ package body Quality_Manager.Integrations.Improve is
 
    procedure Initialize
      (Item : out Adapter; Executable, Config_Path, Quality_Database, State_Database : String) is
-      Path : Hostkit.UString;
+      Value : Hostkit.UString;
    begin
       Item.Executable := To_Unbounded_String (Executable);
       Item.Config_Path := To_Unbounded_String (Config_Path);
       Item.Quality_Database := To_Unbounded_String (Quality_Database);
       Item.State_Database := To_Unbounded_String (State_Database);
-      if Hostkit.Process.Environment_Value ("PATH", Path) then
-         Item.Environment.Append (To_Unbounded_String ("PATH=" & To_String (Path)));
+      if Hostkit.Process.Environment_Value ("PATH", Value) then
+         Item.Environment.Append (To_Unbounded_String ("PATH=" & To_String (Value)));
+      end if;
+      if Hostkit.Process.Environment_Value ("HOME", Value) then
+         Item.Environment.Append (To_Unbounded_String ("HOME=" & To_String (Value)));
       end if;
    end Initialize;
 
@@ -35,11 +38,22 @@ package body Quality_Manager.Integrations.Improve is
          2, 3_600, 16 * 1_024 * 1_024, Result, "command", Expected_Command);
    end Invoke;
 
-   procedure Generate_Plan (Item : Adapter; Project : String; Result : out JSON_CLI.Response) is
+   procedure Generate_Plan
+     (Item    : Adapter;
+      Project : String;
+      Run     : Natural;
+      Result  : out JSON_CLI.Response) is
       Args : Processes.String_Vectors.Vector;
    begin
       Args.Append (To_Unbounded_String ("plan")); Args.Append (To_Unbounded_String ("--project"));
-      Args.Append (To_Unbounded_String (Project)); Invoke (Item, Args, "plan", Result);
+      Args.Append (To_Unbounded_String (Project));
+      if Run > 0 then
+         Args.Append (To_Unbounded_String ("--run"));
+         Args.Append
+           (To_Unbounded_String
+              (Ada.Strings.Fixed.Trim (Natural'Image (Run), Ada.Strings.Both)));
+      end if;
+      Invoke (Item, Args, "plan", Result);
    end Generate_Plan;
 
    procedure Read_Plan

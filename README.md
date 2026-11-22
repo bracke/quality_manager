@@ -12,6 +12,9 @@ maintenance scheduling, Phase 8 improvement campaigns, Phase 9 release
 qualification, and Phase 10 operational control. The model_runner path in
 `config/quality-manager.toml`
 must identify an implementation of `headless-work-v1`.
+The same configuration explicitly selects Improve's executable, configuration file,
+and Improve-owned state database; remediation planning binds `--run` to the
+assessment selected by the coordinator.
 
 ```sh
 alr -n build

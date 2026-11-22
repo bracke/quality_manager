@@ -6,7 +6,11 @@ package Quality_Manager.Integrations.Improve is
    type Adapter is private;
    procedure Initialize
      (Item : out Adapter; Executable, Config_Path, Quality_Database, State_Database : String);
-   procedure Generate_Plan (Item : Adapter; Project : String; Result : out JSON_CLI.Response);
+   procedure Generate_Plan
+     (Item    : Adapter;
+      Project : String;
+      Run     : Natural;
+      Result  : out JSON_CLI.Response);
    procedure Read_Plan
      (Item : Adapter; Plan_Id : String; Revision : Natural; Result : out JSON_CLI.Response);
    procedure Inspect_Approval

@@ -28,6 +28,9 @@ package body Quality_Manager.Config is
       To_Unbounded_String ("quality.database"),
       To_Unbounded_String ("quality.policy"),
       To_Unbounded_String ("integrations.ada_quality"),
+      To_Unbounded_String ("integrations.improve"),
+      To_Unbounded_String ("integrations.improve_config"),
+      To_Unbounded_String ("integrations.improve_state"),
       To_Unbounded_String ("integrations.model_runner"),
       To_Unbounded_String ("scheduler.assessment_workers"),
       To_Unbounded_String ("scheduler.agent_workers"),
@@ -40,6 +43,9 @@ package body Quality_Manager.Config is
       Quality_Database     => Null_Unbounded_String,
       Quality_Policy       => Null_Unbounded_String,
       Ada_Quality_Executable => To_Unbounded_String ("ada-quality"),
+      Improve_Executable   => To_Unbounded_String ("improve"),
+      Improve_Config       => Null_Unbounded_String,
+      Improve_State        => To_Unbounded_String ("var/improve.db"),
       Model_Runner_Executable => To_Unbounded_String ("model_runner"),
       Assessment_Workers   => 4,
       Agent_Workers        => 1,
@@ -330,6 +336,37 @@ package body Quality_Manager.Config is
             return;
          end if;
          Item.Model_Runner_Executable := To_Unbounded_String (Value);
+      end;
+
+      declare
+         Value : constant String := External_Reader.Get_String
+           (Store, "integrations.improve", To_String (Item.Improve_Executable));
+      begin
+         if Value'Length = 0 then
+            Result := Make_Result
+              (Invalid_Request, "integrations.improve must not be empty", "qm.config.empty-executable");
+            return;
+         end if;
+         Item.Improve_Executable := To_Unbounded_String (Value);
+      end;
+
+      declare
+         Value : constant String := External_Reader.Get_String (Store, "integrations.improve_config", "");
+      begin
+         Item.Improve_Config :=
+           (if Value'Length = 0 then Null_Unbounded_String else To_Unbounded_String (Normalize_Path (Value)));
+      end;
+
+      declare
+         Value : constant String := External_Reader.Get_String
+           (Store, "integrations.improve_state", To_String (Item.Improve_State));
+      begin
+         if Value'Length = 0 then
+            Result := Make_Result
+              (Invalid_Request, "integrations.improve_state must not be empty", "qm.config.empty-path");
+            return;
+         end if;
+         Item.Improve_State := To_Unbounded_String (Normalize_Path (Value));
       end;
 
       External_Reader.Get_Integer (Store, "scheduler.assessment_workers", Integer_Val, Status);

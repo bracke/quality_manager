@@ -7,6 +7,9 @@ policy = "../ada_quality/quality-policy.toml"
 
 [integrations]
 ada_quality = "../ada_quality/bin/ada-quality"
+improve = "../improve/bin/improve"
+improve_config = "../improve/config/improve.toml"
+improve_state = "var/improve.db"
 model_runner = "../model_runner/bin/model_runner"
 
 [scheduler]
