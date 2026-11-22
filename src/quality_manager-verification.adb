@@ -223,7 +223,7 @@ package body Quality_Manager.Verification is
       end;
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Evidence := (others => <>);
          Result := Make_Result
            (Incompatible_Contract, "invalid assessment evidence", "qm.verification.assessment");
@@ -301,7 +301,7 @@ package body Quality_Manager.Verification is
       end;
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Evidence := (others => <>);
          Result := Make_Result
            (Incompatible_Contract, "invalid regression comparison", "qm.verification.regression");
@@ -400,7 +400,7 @@ package body Quality_Manager.Verification is
       end;
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Evidence := (others => <>);
          Result := Make_Result
            (Incompatible_Contract, "invalid Improve verification", "qm.verification.improve");

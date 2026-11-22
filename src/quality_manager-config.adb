@@ -226,7 +226,7 @@ package body Quality_Manager.Config is
          end;
       end;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          if IO.Is_Open (File) then
             IO.Close (File);
          end if;
@@ -440,7 +440,7 @@ package body Quality_Manager.Config is
 
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Result := Make_Result
            (Integrity_Error, "configuration validation failed unexpectedly", "qm.config.internal");
    end Load;

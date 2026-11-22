@@ -137,7 +137,7 @@ package body Quality_Manager.Recovery is
       Project := (Database, Positive (Id), Path);
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Result := Make_Result
            (Integrity_Error, "persisted recovery work is malformed", "qm.recovery.work-project");
    end Decode_Project;

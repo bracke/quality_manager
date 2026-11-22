@@ -76,7 +76,7 @@ package body Quality_Manager.Campaigns is
          end;
       end;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          if IO.Is_Open (File) then
             IO.Close (File);
          end if;

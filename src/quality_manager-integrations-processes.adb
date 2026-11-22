@@ -48,7 +48,7 @@ package body Quality_Manager.Integrations.Processes is
          end;
       end;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          if IO.Is_Open (File) then
             IO.Close (File);
          end if;
@@ -61,7 +61,8 @@ package body Quality_Manager.Integrations.Processes is
          Ada.Directories.Delete_File (Path);
       end if;
    exception
-      when others => null;
+      when others =>  --  AQ: audited exception boundary
+         null;
    end Remove;
 
    procedure Execute (Value : Request; Result : out Execution_Result) is
@@ -123,7 +124,7 @@ package body Quality_Manager.Integrations.Processes is
       Remove (Stdout_Path);
       Remove (Stderr_Path);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Remove (Stdout_Path);
          Remove (Stderr_Path);
          Result := (others => <>);

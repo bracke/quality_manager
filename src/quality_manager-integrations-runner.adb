@@ -251,7 +251,7 @@ package body Quality_Manager.Integrations.Runner is
          end;
       end;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          null;
    end Normalize_Error;
 
@@ -339,7 +339,7 @@ package body Quality_Manager.Integrations.Runner is
       end;
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Result := Make_Result
            (Incompatible_Contract, "invalid model_runner capabilities document", "qm.runner.capabilities");
    end Validate_Capabilities;
@@ -431,7 +431,7 @@ package body Quality_Manager.Integrations.Runner is
       end;
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Result := Make_Result
            (Incompatible_Contract, "invalid model_runner work snapshot", "qm.runner.snapshot");
    end Decode_Snapshot;

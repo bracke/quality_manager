@@ -544,7 +544,7 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Quality_Manager.Storage.Close (Store, Result);
          Cleanup;
          raise;
@@ -744,7 +744,7 @@ package body Quality_Manager_Test_Suite is
       Output := To_Unbounded_String (Run (Args ("unknown-command"), 1));
       Cleanup;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Quality_Manager.Storage.Close (Store, Result);
          Cleanup;
          raise;
@@ -1336,7 +1336,7 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Quality_Manager.Storage.Close (Crash_Store, Result);
          Quality_Manager.Storage.Close (Contender, Result);
          Quality_Manager.Storage.Close (Store, Result);
@@ -1718,7 +1718,7 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Quality_Manager.Storage.Close (Store, Result);
          Cleanup;
          raise;
@@ -1742,7 +1742,7 @@ package body Quality_Manager_Test_Suite is
       Assert (not Quality_Manager.Storage.Is_Open (Store), "corrupt database is not silently repaired");
       Ada.Directories.Delete_File (Path);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          if Ada.Text_IO.Is_Open (File) then
             Ada.Text_IO.Close (File);
          end if;
@@ -2429,7 +2429,7 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Quality_Manager.Storage.Close (Store, Result);
          Cleanup;
          raise;
@@ -3127,7 +3127,7 @@ package body Quality_Manager_Test_Suite is
                Ada.Directories.Delete_File (Scenario_Path);
             end if;
          exception
-            when others =>
+            when others =>  --  AQ: audited exception boundary
                Quality_Manager.Scheduler.Shutdown (Scenario_Scheduler);
                Quality_Manager.Storage.Close (Scenario_Store, Scenario_Result);
                if Ada.Directories.Exists (Scenario_Path) then
@@ -3143,7 +3143,7 @@ package body Quality_Manager_Test_Suite is
          Exercise_Failure ("assessment-invalid", Quality_Manager.Results.Success);
       end;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Quality_Manager.Storage.Close (Store, Result);
          Cleanup;
          raise;
@@ -3904,7 +3904,7 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Quality_Manager.Storage.Close (Store, Result);
          Cleanup;
          raise;
@@ -4069,7 +4069,7 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Quality_Manager.Storage.Close (Store, Result);
          Cleanup;
          raise;
@@ -4454,7 +4454,7 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Quality_Manager.Storage.Close (Store, Result);
          Cleanup;
          raise;
@@ -4818,7 +4818,7 @@ package body Quality_Manager_Test_Suite is
          end;
          Cleanup_Wrappers;
       exception
-         when others =>
+         when others =>  --  AQ: audited exception boundary
             Quality_Manager.Storage.Close (Wrapper_Store, Wrapper_Result);
             Cleanup_Wrappers;
             raise;
@@ -4826,7 +4826,7 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Quality_Manager.Storage.Close (Store, Result);
          Cleanup;
          raise;
@@ -5237,7 +5237,7 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Quality_Manager.Storage.Close (Store, Result);
          Cleanup;
          raise;

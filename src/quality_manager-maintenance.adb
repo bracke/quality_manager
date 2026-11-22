@@ -250,7 +250,7 @@ package body Quality_Manager.Maintenance is
       end;
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Plan := (others => <>);
          Result := Make_Result
            (Incompatible_Contract, "invalid assessment plan", "qm.maintenance.plan");
@@ -313,7 +313,7 @@ package body Quality_Manager.Maintenance is
       Project := (Database, Positive (Id), Path);
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Result := Make_Result
            (Integrity_Error, "persisted assessment work is malformed", "qm.maintenance.work-project");
    end Decode_Work_Project;
@@ -376,7 +376,7 @@ package body Quality_Manager.Maintenance is
          Last_Source_Fingerprint => Source);
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Result := Make_Result
            (Integrity_Error, "persisted project observation is malformed", "qm.maintenance.project-observation");
    end Read_Project_Observation;
@@ -1200,7 +1200,7 @@ package body Quality_Manager.Maintenance is
          Reconcile_Cycles (Item, Result);
       end if;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Result := Make_Result (Integrity_Error, "maintenance cycle failed", "qm.maintenance.internal");
    end Run_Cycle;
 
@@ -1294,7 +1294,7 @@ package body Quality_Manager.Maintenance is
    exception
       when Maintenance_Error =>
          raise;
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          if Lease_Held and then Quality_Manager.Storage.Is_Open (Store) then
             Quality_Manager.Storage.Release_Lease
               (Store, "active-coordinator", Lease_Owner,

@@ -263,7 +263,7 @@ package body Quality_Manager.Planning is
       end;
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Plan := (others => <>);
          Result := Make_Result
            (Incompatible_Contract, "invalid Improve plan evidence", "qm.planning.contract");

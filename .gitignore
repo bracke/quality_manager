@@ -8,6 +8,8 @@
 /tests/bin/
 /tests/config/
 /tests/obj/
+/tools/bin/
+/tools/obj/
 /tests/fixtures/release_project/alire/
 /tests/fixtures/release_project/bin/
 /tests/fixtures/release_project/obj/

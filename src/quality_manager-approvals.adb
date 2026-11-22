@@ -42,7 +42,7 @@ package body Quality_Manager.Approvals is
          return Text;
       end;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          if IO.Is_Open (File) then
             IO.Close (File);
          end if;

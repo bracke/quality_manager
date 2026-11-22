@@ -214,7 +214,7 @@ package body Quality_Manager.Storage.Decoding is
          Value := Empty_Work;
          Result := Make_Result
            (Incompatible_Contract, "persisted work record has unknown values", "qm.storage.work-values");
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Value := Empty_Work;
          Result := Make_Result
            (Integrity_Error, "persisted work record cannot be decoded", "qm.storage.work-decode");
@@ -270,7 +270,7 @@ package body Quality_Manager.Storage.Decoding is
          Value := Empty_Dispatch;
          Result := Make_Result
            (Incompatible_Contract, "persisted dispatch has unknown values", "qm.storage.dispatch-values");
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Value := Empty_Dispatch;
          Result := Make_Result
            (Integrity_Error, "persisted dispatch cannot be decoded", "qm.storage.dispatch-decode");
@@ -328,7 +328,7 @@ package body Quality_Manager.Storage.Decoding is
          Value := Empty_Approval;
          Result := Make_Result
            (Incompatible_Contract, "persisted approval has unknown values", "qm.storage.approval-values");
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Value := Empty_Approval;
          Result := Make_Result
            (Integrity_Error, "persisted approval cannot be decoded", "qm.storage.approval-decode");

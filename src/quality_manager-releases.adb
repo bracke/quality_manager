@@ -776,7 +776,7 @@ package body Quality_Manager.Releases is
       IO.Close (File);
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          if IO.Is_Open (File) then IO.Close (File); end if;
          Result := Make_Result (Execution_Error, "cannot write release evidence", "qm.release.export");
    end Write_File;

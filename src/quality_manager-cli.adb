@@ -229,7 +229,7 @@ package body Quality_Manager.CLI is
          end;
       end if;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Result := Make_Result
            (Invalid_Request, "invalid command line", "qm.cli.invalid");
    end Parse;

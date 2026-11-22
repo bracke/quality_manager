@@ -391,7 +391,7 @@ package body Quality_Manager.Storage is
       end if;
       Result := Make_Result (Success);
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          if Database.Is_Open (Item.DB) then
             Database.Close (Item.DB);
          end if;

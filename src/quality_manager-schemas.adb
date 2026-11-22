@@ -79,7 +79,7 @@ package body Quality_Manager.Schemas is
          end if;
       end;
    exception
-      when others =>
+      when others =>  --  AQ: audited exception boundary
          Result := Make_Result
            (Integrity_Error, "JSON contract validation failed unexpectedly", "qm.schema.internal");
    end Validate_Versioned_JSON;
