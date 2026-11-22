@@ -262,7 +262,7 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
 | P11-06 real maintenance scenario | complete | assessments 19–24 cover all six projects; each cycle has a terminal coordination event |
 | P11-07 real campaign scenario | complete | `phase11-structure-20261122` advanced STR-01 from baseline 19 to passing assessment 25 |
-| P11-08 real release scenario | blocked | assessment 26 found 11 violations and one unknown result; no evidence bundle was issued |
+| P11-08 real release scenario | blocked | Quality Manager assessment 28 found nine nonpassing indicators; no evidence bundle was issued |
 | P11-09 crash/concurrency stress | complete | abrupt termination recovery, ownership contention, stale fencing, and 128 lease cycles pass |
 | P11-10 packaging/docs/CI | implemented | source-only manifest passes; pinned Linux CI validates and creates a source archive |
 
@@ -373,9 +373,10 @@ intervention outcome and atomically closed all six cycle records. `Verified` on 
 finished, not that the project is healthy; its completion event retains the associated work state.
 
 The real campaign `phase11-structure-20261122` froze project 1 at assessment 19 and required STR-01 to pass. Fresh
-assessment 25 supplied current evidence, and Summary reconciliation advanced the campaign to `Verified`. The exact
-release candidate `27d1550a00258e7ed7c5bb319c4cf2ab520182068dfc7680fa27a02d99f080c2` then produced assessment
-26. It was correctly blocked with 11 violations and unknown TST-03 evidence, so qualification issued no bundle.
+assessment 25 supplied current evidence, and Summary reconciliation advanced the campaign to `Verified`. The first
+exact release candidate produced assessment 26 and was correctly blocked. Quality Manager candidates then produced
+assessments 27 and 28. The latter passed exact commit, build, reproducibility, tests, and applicable proof checks, but
+still had nine nonpassing quality indicators, so qualification issued no bundle.
 
 Coordinator ownership now uses an expiry-aware durable lease with fencing generations and renewal before external
 work. The suite kills a helper process without finalization, reopens its database, reconstructs the prepared journal

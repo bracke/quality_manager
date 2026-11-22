@@ -4,6 +4,13 @@ with "database";
 with "hostkit";
 
 project Quality_Manager is
+   Config_Root := external ("CONFIG_ALIRE_PREFIX", "../config");
+   Jsonlib_Root := external ("JSONLIB_ALIRE_PREFIX", "../jsonlib");
+   Database_Root := external ("DATABASE_ALIRE_PREFIX", "../database");
+   Hostkit_Root := external ("HOSTKIT_ALIRE_PREFIX", "../hostkit");
+   Representation_Root := external ("REPRESENTATION_ALIRE_PREFIX", "../representation");
+   Cryptolib_Root := external ("CRYPTOLIB_ALIRE_PREFIX", "../cryptolib");
+
    type Boolean_Text is ("false", "true");
    Warnings_As_Errors : Boolean_Text :=
      external ("QUALITY_MANAGER_WARNINGS_AS_ERRORS", "false");
@@ -44,6 +51,13 @@ project Quality_Manager is
       for Proof_Switches ("Ada") use
         ("--level=2", "-u", "quality_manager-journal.adb");
    end Prove;
+
+   package Documentation is
+      for Excluded_Project_Files use
+        (Config_Root & "/config.gpr", Jsonlib_Root & "/jsonlib.gpr",
+         Database_Root & "/database.gpr", Hostkit_Root & "/hostkit.gpr",
+         Representation_Root & "/representation.gpr", Cryptolib_Root & "/cryptolib.gpr");
+   end Documentation;
 
    package Linker is
       case Coverage is

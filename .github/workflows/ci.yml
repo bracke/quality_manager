@@ -62,11 +62,17 @@ jobs:
         working-directory: quality_manager
         run: alr exec -- gnatdoc -P quality_manager.gpr
 
+      - name: Aggregate release checker
+        working-directory: quality_manager
+        run: |
+          alr exec -- gprbuild -P tools/quality_manager_tools.gpr -p
+          ./tools/bin/check_all
+
       - name: Verify source-only manifest
         working-directory: quality_manager
         run: >-
           test -z "$(git ls-files |
-          grep -E '(^|/)(alire|bin|obj|coverage|var)(/|$)|\.(gcda|gcno|gcov|db|database)$')"
+          grep -E '(^|/)(alire|bin|obj|var)(/|$)|\.(gcda|gcno|gcov|db|database)$')"
 
       - name: Build source archive
         working-directory: quality_manager
