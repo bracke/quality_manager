@@ -6,12 +6,56 @@ with Quality_Manager.Recovery;
 
 package body Quality_Manager.Reporting is
    use type Quality_Manager.Results.Result_Kind;
+   use type Quality_Manager.Storage.Record_Kind;
+
+   Cause_Prefix    : constant String := "cause=";
+   Evidence_Marker : constant String := ASCII.LF & "evidence=";
 
    function JSON_String (Item : String) return String is
      ('"' & Jsonlib.Serializers.Escape (Item) & '"');
 
    function Image (Item : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Item), Ada.Strings.Both));
+
+   function Event_Cause (Item : Quality_Manager.Storage.Stored_Entity) return String is
+      Payload  : constant String := To_String (Item.Payload);
+      Boundary : constant Natural := Ada.Strings.Fixed.Index (Payload, Evidence_Marker);
+      First    : constant Natural := Payload'First + Cause_Prefix'Length;
+   begin
+      if Item.Kind /= Quality_Manager.Storage.Event_Record
+        or else Payload'Length < Cause_Prefix'Length
+        or else Payload (Payload'First .. Payload'First + Cause_Prefix'Length - 1) /= Cause_Prefix
+        or else Boundary = 0
+      then
+         return "";
+      end if;
+      return (if First >= Boundary then "" else Payload (First .. Boundary - 1));
+   end Event_Cause;
+
+   function Event_Evidence (Item : Quality_Manager.Storage.Stored_Entity) return String is
+      Payload  : constant String := To_String (Item.Payload);
+      Boundary : constant Natural := Ada.Strings.Fixed.Index (Payload, Evidence_Marker);
+      First    : constant Natural := Boundary + Evidence_Marker'Length;
+   begin
+      if Item.Kind /= Quality_Manager.Storage.Event_Record or else Boundary = 0 or else First > Payload'Last then
+         return "";
+      end if;
+      return Payload (First .. Payload'Last);
+   end Event_Evidence;
+
+   function Markdown_Cell (Value : String) return String is
+      Text : Unbounded_String;
+   begin
+      for Character of Value loop
+         case Character is
+            when '|' => Append (Text, "\|");
+            when ASCII.LF => Append (Text, "<br>");
+            when ASCII.CR => null;
+            when others => Append (Text, Character);
+         end case;
+      end loop;
+      return To_String (Text);
+   end Markdown_Cell;
 
    function View_Name (View : Operational_View) return String is
      (case View is
@@ -122,6 +166,10 @@ package body Quality_Manager.Reporting is
                   & ",""state"":" & JSON_String (To_String (Item.State))
                   & ",""terminal"":" & (if Item.Terminal then "true" else "false")
                   & ",""generation"":" & Image (Natural (Item.Generation))
+                  & (if View = Event_Stream
+                     then ",""cause"":" & JSON_String (Event_Cause (Item))
+                       & ",""evidence"":" & JSON_String (Event_Evidence (Item))
+                     else "")
                   & (if View = Recovery_Status
                      then ",""recovery_action"":" & JSON_String (To_String (Item.Payload))
                      else "") & "}");
@@ -135,7 +183,10 @@ package body Quality_Manager.Reporting is
                Append
                  (Text, ASCII.LF & Kind_Name (Item.Kind) & "  "
                   & To_String (Item.Entity_Key) & "  " & To_String (Item.State)
-                  & (if View = Recovery_Status then "  " & To_String (Item.Payload)
+                  & (if View = Event_Stream then "  cause=" & Event_Cause (Item)
+                     & (if Event_Evidence (Item) = "" then ""
+                        else "  evidence=" & Event_Evidence (Item))
+                     elsif View = Recovery_Status then "  " & To_String (Item.Payload)
                      elsif Item.Terminal then "  terminal" else ""));
             end loop;
          when Quality_Manager.CLI.Markdown_Output =>
@@ -143,13 +194,19 @@ package body Quality_Manager.Reporting is
               (Text, "# Quality Manager " & View_Name (View) & ASCII.LF & ASCII.LF
                & "Database identity: `" & Quality_Manager.Storage.Identity (Store) & "`"
                & ASCII.LF & ASCII.LF
-               & "| Kind | Key | State | Terminal |" & ASCII.LF
-               & "|---|---|---|---|");
+               & "| Kind | Key | State | Terminal"
+               & (if View = Event_Stream then " | Cause | Evidence" else "") & " |" & ASCII.LF
+               & "|---|---|---|---"
+               & (if View = Event_Stream then "|---|---" else "") & "|");
             for Item of Values loop
                Append
                  (Text, ASCII.LF & "| " & Kind_Name (Item.Kind) & " | `"
                   & To_String (Item.Entity_Key) & "` | " & To_String (Item.State)
-                  & " | " & (if Item.Terminal then "yes" else "no") & " |");
+                  & " | " & (if Item.Terminal then "yes" else "no")
+                  & (if View = Event_Stream
+                     then " | " & Markdown_Cell (Event_Cause (Item))
+                       & " | " & Markdown_Cell (Event_Evidence (Item))
+                     else "") & " |");
             end loop;
       end case;
       return To_String (Text);

@@ -15,6 +15,17 @@ Status: **implemented and validated** in Ada Quality commit `3a85a5b`. The publi
 `database-statistics` JSON v2 expose the UUID. Atomic migration, reopen stability, independent-store distinction,
 schema rejection, full tests, 90.03% coverage, release checking, and GNATdoc generation passed.
 
+## AQ-RUNTIME-01 — Exclude runtime state from source identity
+
+Ada Quality's portable source inventory must exclude the conventional `var/` runtime directory. Otherwise a
+self-hosted coordinator changes its own source fingerprint by journaling an assessment, even though the Git source is
+unchanged.
+
+Status: **implemented and validated** in Ada Quality commit `4ee421b`. The canonical inventory, staging rules, and
+`.gitignore` now classify `var/` as generated state. The full Ada Quality test action and forced production build
+passed. A live Quality Manager database mutation left the `quality_manager` source fingerprint unchanged at
+`e4830d6b7ca287b1`; assessment 10 and the subsequent dry-run plan retained that exact identity.
+
 ## AQS-PAGE-01 — Complete Summary enumeration
 
 Add snapshot-bound cursor pagination to collection JSON or a typed API returning the complete bounded report. Cursors

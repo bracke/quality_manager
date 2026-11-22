@@ -260,7 +260,7 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | P11-03 applicable GNATprove | complete | Journal state machine SPARK flow/proof passes |
 | P11-04 GNATdoc | complete | project documentation generation succeeds |
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
-| P11-06 real maintenance scenario | partial | one real project assessed; multi-project archive still required |
+| P11-06 real maintenance scenario | partial | six-project cycle captured; environment repairs still required |
 | P11-07 real campaign scenario | pending release environment | requires current baselines and authorization records |
 | P11-08 real release scenario | pending release environment | requires exact candidate evidence and model credentials |
 | P11-09 crash/concurrency stress | partial | assessment/check replay, current-record idempotency, fencing, and process tests pass; full soak remains |
@@ -284,6 +284,22 @@ and GNATprove failed. Source changes made during the long-running check also cau
 differ from the persisted invocation intent. Exact manual reconciliation therefore rejected the run, moved the work
 to `Blocked`, and closed the journal as `Aborted`; the recovery queue is now empty. The coordinator cannot claim
 compliance, and the environment still needs repair before the multi-project P11-06 record can pass.
+
+Later that day, a real six-project maintenance cycle attempted every registered project and persisted Ada Quality
+assessments 3 through 8. Assessments 3–6 and 8 completed; assessment 7 for `improve` was interrupted and its
+coordinator journal remains at the ambiguous invoking boundary for explicit reconciliation. The completed results are
+not compliant: coverage and release-check evidence are unavailable across several projects, `ada_quality` could not
+resolve its test subcrate in the staged environment, and `model_runner` exceeded warning/proof tool limits. The
+coordinator therefore retained five `Inconclusive` work items and one `Needs_Intervention`; it did not report the
+cycle as healthy.
+
+That run also exposed an upstream source-identity defect: Quality Manager's ignored `var/quality-manager.db` was part
+of Ada Quality's portable tree fingerprint, so journaling changed the candidate during self-assessment. Ada Quality
+commit `4ee421b` excludes conventional `var/` runtime state and adds regression tests. Live database mutation then
+preserved fingerprint `e4830d6b7ca287b1`, and the follow-up assessment 10 matched both its invocation and subsequent
+plan. Quality Manager adopted assessment 10 and classified it `Inconclusive` only because production coverage and the
+release checker remain unavailable. P11-06 now has a genuine multi-project execution record, but it remains incomplete
+until those measurement gaps and assessment 7 are resolved.
 
 Journaled authorized publication is implemented. It requires a durable coordinator approval matching project, plan
 revision, complete content fingerprint, action, policy, and lifetime; confirms Improve's atomic approval; preflights

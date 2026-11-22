@@ -466,6 +466,18 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Prepare_Operation
         (Store, 999, "operator-recovery", "intent", "external-999", Result);
       Assert (Result.Kind = Quality_Manager.Results.Success, "recoverable operation prepared");
+      Quality_Manager.Storage.Put
+        (Store,
+         (Internal_Id => 1,
+          Kind => Quality_Manager.Storage.Event_Record,
+          Entity_Key => To_Unbounded_String ("event:operator-test"),
+          State => To_Unbounded_String ("QUEUED->BLOCKED"),
+          Payload => To_Unbounded_String
+            ("cause=missing authorization" & ASCII.LF & "evidence=approval:required"),
+          Terminal => True,
+          Generation => 1),
+         Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "diagnostic event persisted");
       for View in Quality_Manager.Reporting.Operational_View loop
          for Format in Quality_Manager.CLI.Output_Format loop
             Output := To_Unbounded_String
@@ -483,7 +495,19 @@ package body Quality_Manager_Test_Suite is
                     (Ada.Strings.Fixed.Index
                        (To_String (Output), "INVOKE_AFTER_REVALIDATION") > 0,
                      "recovery view reports the safe next action");
+               elsif View = Quality_Manager.Reporting.Event_Stream then
+                  Assert
+                    (Ada.Strings.Fixed.Index
+                       (To_String (Output), """cause"":""missing authorization""") > 0
+                     and then Ada.Strings.Fixed.Index
+                       (To_String (Output), """evidence"":""approval:required""") > 0,
+                     "JSON event stream exports its persisted cause and evidence");
                end if;
+            elsif View = Quality_Manager.Reporting.Event_Stream then
+               Assert
+                 (Ada.Strings.Fixed.Index (To_String (Output), "missing authorization") > 0
+                  and then Ada.Strings.Fixed.Index (To_String (Output), "approval:required") > 0,
+                  "human event views export their persisted cause and evidence");
             end if;
          end loop;
       end loop;
