@@ -554,30 +554,46 @@ package body Quality_Manager.Verification is
          return 0;
    end Assessment_External_Id;
 
-   procedure Assessment
+   procedure Establish_Assessment
      (Store    : in out Quality_Manager.Storage.Store;
       Quality  : Quality_Manager.Integrations.Quality.Adapter;
-      Request  : Remediation_Request;
+      Request  : Assessment_Request;
       Evidence : out Assessment_Evidence;
       Result   : out Operation_Result) is
       Item      : Quality_Manager.Storage.Stored_Entity;
       State     : Quality_Manager.Journal.Journal_State := Quality_Manager.Journal.Prepared;
       Response  : Quality_Manager.Integrations.JSON_CLI.Response;
       Run       : Natural := 0;
-      Pending   : constant String := "assessment:pending:" & Number (Request.Assessment_Operation);
+      Pending   : constant String := "assessment:pending:" & Number (Request.Operation);
       Intent    : constant String := Quality_Manager.Identities.Canonical_Digest
         ([Quality_Manager.Identities.Text_Value ("authoritative-assessment-v1"),
           Quality_Manager.Identities.Text_Value (To_String (Request.Work_Id)),
           Quality_Manager.Identities.Text_Value (To_String (Request.Project.Quality_Database_Id)),
           Quality_Manager.Identities.Number_Value
             (Interfaces.Unsigned_64 (Request.Project.Quality_Project_Id)),
+          Quality_Manager.Identities.Text_Value (To_String (Request.Project.Canonical_Path)),
+          Quality_Manager.Identities.Text_Value (To_String (Request.Project_Selector)),
           Quality_Manager.Identities.Text_Value (To_String (Request.Candidate_Source)),
           Quality_Manager.Identities.Text_Value (To_String (Request.Policy_Fingerprint)),
           Quality_Manager.Identities.Text_Value (To_String (Request.Toolchain_Fingerprint)),
           Quality_Manager.Identities.Text_Value (To_String (Request.Profile))]);
    begin
       Evidence := (others => <>);
-      Read_Journal (Store, Request.Assessment_Operation, Item, State, Result);
+      if Request.Operation = 0
+        or else Length (Request.Work_Id) = 0
+        or else Length (Request.Project.Quality_Database_Id) = 0
+        or else Length (Request.Project.Canonical_Path) = 0
+        or else Length (Request.Project_Selector) = 0
+        or else Length (Request.Profile) = 0
+        or else Length (Request.Candidate_Source) = 0
+        or else Length (Request.Policy_Fingerprint) = 0
+        or else Length (Request.Toolchain_Fingerprint) = 0
+      then
+         Result := Make_Result
+           (Invalid_Request, "assessment request is incomplete", "qm.verify.assessment-request");
+         return;
+      end if;
+      Read_Journal (Store, Request.Operation, Item, State, Result);
       if Result.Kind = Success then
          if not Has_Intent (Item, Intent, Pending) then
             Result := Make_Result
@@ -586,7 +602,7 @@ package body Quality_Manager.Verification is
          end if;
       elsif Result.Kind = Not_Found then
          Quality_Manager.Storage.Prepare_Operation
-           (Store, Request.Assessment_Operation, "authoritative-assessment", Intent, Pending, Result);
+           (Store, Request.Operation, "authoritative-assessment", Intent, Pending, Result);
          if Result.Kind /= Success then
             return;
          end if;
@@ -597,7 +613,7 @@ package body Quality_Manager.Verification is
 
       if State = Quality_Manager.Journal.Invoking then
          Quality_Manager.Storage.Advance_Operation
-           (Store, Request.Assessment_Operation, State, Quality_Manager.Journal.Needs_Intervention,
+           (Store, Request.Operation, State, Quality_Manager.Journal.Needs_Intervention,
             Pending, "Ada Quality cannot reconcile an interrupted check by operation identity", Result);
          if Result.Kind = Success then
             Result := Make_Result
@@ -616,7 +632,7 @@ package body Quality_Manager.Verification is
          Quality_Manager.Integrations.Quality.Read_Assessment (Quality, Positive (Run), Response);
       elsif State = Quality_Manager.Journal.Prepared then
          Quality_Manager.Storage.Advance_Operation
-           (Store, Request.Assessment_Operation, State, Quality_Manager.Journal.Invoking, Pending, "", Result);
+           (Store, Request.Operation, State, Quality_Manager.Journal.Invoking, Pending, "", Result);
          if Result.Kind /= Success then
             return;
          end if;
@@ -635,7 +651,7 @@ package body Quality_Manager.Verification is
       end if;
       if State = Quality_Manager.Journal.Invoking then
          Quality_Manager.Storage.Advance_Operation
-           (Store, Request.Assessment_Operation, State, Quality_Manager.Journal.Reconciling,
+           (Store, Request.Operation, State, Quality_Manager.Journal.Reconciling,
             "assessment:" & Ada.Strings.Fixed.Trim
               (Natural'Image (Evidence.Assessment_Id), Ada.Strings.Both),
             "completed assessment observed", Result);
@@ -646,12 +662,12 @@ package body Quality_Manager.Verification is
       end if;
       if State = Quality_Manager.Journal.Reconciling then
          Quality_Manager.Storage.Advance_Operation
-           (Store, Request.Assessment_Operation, State, Quality_Manager.Journal.Committed,
+           (Store, Request.Operation, State, Quality_Manager.Journal.Committed,
             "assessment:" & Ada.Strings.Fixed.Trim
               (Natural'Image (Evidence.Assessment_Id), Ada.Strings.Both),
             "assessment adopted", Result);
       end if;
-   end Assessment;
+   end Establish_Assessment;
 
    procedure Improve_Verification
      (Store    : in out Quality_Manager.Storage.Store;
@@ -811,7 +827,17 @@ package body Quality_Manager.Verification is
          return;
       end if;
 
-      Assessment (Store, Quality, Request, Assessment_Result, Result);
+      Establish_Assessment
+        (Store, Quality,
+         (Operation => Request.Assessment_Operation,
+          Work_Id => Request.Work_Id,
+          Project => Request.Project,
+          Project_Selector => Request.Project_Selector,
+          Profile => Request.Profile,
+          Candidate_Source => Request.Candidate_Source,
+          Policy_Fingerprint => Request.Policy_Fingerprint,
+          Toolchain_Fingerprint => Request.Toolchain_Fingerprint),
+         Assessment_Result, Result);
       if Result.Kind /= Success then
          return;
       end if;

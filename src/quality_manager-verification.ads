@@ -101,6 +101,24 @@ package Quality_Manager.Verification is
       Maximum_Attempts         : Positive := 2;
    end record;
 
+   type Assessment_Request is record
+      Operation             : Quality_Manager.Identities.Operation_Id;
+      Work_Id               : Ada.Strings.Unbounded.Unbounded_String;
+      Project               : Quality_Manager.Identities.Project_Key;
+      Project_Selector      : Ada.Strings.Unbounded.Unbounded_String;
+      Profile               : Ada.Strings.Unbounded.Unbounded_String;
+      Candidate_Source      : Ada.Strings.Unbounded.Unbounded_String;
+      Policy_Fingerprint    : Ada.Strings.Unbounded.Unbounded_String;
+      Toolchain_Fingerprint : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   procedure Establish_Assessment
+     (Store    : in out Quality_Manager.Storage.Store;
+      Quality  : Quality_Manager.Integrations.Quality.Adapter;
+      Request  : Assessment_Request;
+      Evidence : out Assessment_Evidence;
+      Result   : out Quality_Manager.Results.Operation_Result);
+
    procedure Decode_Assessment
      (Response : Quality_Manager.Integrations.JSON_CLI.Response;
       Evidence : out Assessment_Evidence;

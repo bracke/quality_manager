@@ -212,9 +212,10 @@ GNATdoc passed.
 | P9-10 qualification tests | complete for coordinator workflow | configured fresh assessment, local gates, export, invalidation, recovery |
 
 Candidate creation uses Ada Quality's dry-run release plan for exact source, policy, and toolchain identities rather
-than synthesizing them locally. Local release checks use the bounded process service and a durable operation journal.
-An observed result is persisted before the journal commits and is adopted after interruption. Qualification never
-treats a failed gate as an execution failure and never publishes a tag, pushes a branch, or releases an Alire crate.
+than synthesizing them locally. The authoritative assessment and local release checks use durable operations; a
+repeated qualification adopts the exact assessment run and check evidence. An observed result is persisted before its
+journal commits. Qualification never treats a failed gate as an execution failure and never publishes a tag, pushes a
+branch, or releases an Alire crate.
 
 Gate: **passed for the coordinator workflow**. The 24-test suite covers below-90% rejection, configured fresh-evidence
 qualification, chunked evidence export, post-qualification invalidation, new candidate generation, and interrupted
@@ -247,14 +248,14 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | Task | State | Evidence |
 | --- | --- | --- |
 | P11-01 complete AUnit suites | complete | 24/24 tests pass, including executable CLI acceptance |
-| P11-02 90% production coverage | complete | 4,428/4,915 body lines, 90.0906% |
+| P11-02 90% production coverage | complete | 4,451/4,940 body lines, 90.0996% |
 | P11-03 applicable GNATprove | complete | Journal state machine SPARK flow/proof passes |
 | P11-04 GNATdoc | complete | project documentation generation succeeds |
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
 | P11-06 real maintenance scenario | pending release environment | requires configured multi-project quality inventory |
 | P11-07 real campaign scenario | pending release environment | requires current baselines and authorization records |
 | P11-08 real release scenario | pending release environment | requires exact candidate evidence and model credentials |
-| P11-09 crash/concurrency stress | partial | journal boundaries, restart replay, fencing, and process tests pass; release soak remains |
+| P11-09 crash/concurrency stress | partial | assessment/check replay, current-record idempotency, fencing, and process tests pass; full soak remains |
 | P11-10 packaging/docs/CI | partial | manifests, manpage, schemas, catalog, checklist present; final release archive remains |
 
 The stabilization work fixes explicit configuration propagation for maintenance, campaigns, and release export,

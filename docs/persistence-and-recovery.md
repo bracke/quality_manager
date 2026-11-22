@@ -13,6 +13,9 @@ Work transitions are compare-and-set operations. The new work state and append-o
 transaction. Terminal work cannot be reopened. Active dispatches use the global remediation identity as their unique
 logical key, preventing duplicate physical execution across workflows.
 
+Mutable project, campaign, target, and release records advance their fencing generation only when content changes.
+Replaying identical current state is a no-op, so recovery does not manufacture a new generation.
+
 External operations follow a durable journal:
 
 | Persisted state | Restart action |
@@ -26,3 +29,5 @@ External operations follow a durable journal:
 
 Recovery scanning is bounded. Lease acquisition and renewal require the caller’s observed generation and a strictly
 larger new generation, so an obsolete owner cannot renew after another owner advances the fence.
+Ada Quality assessments are treated as non-idempotent after invocation: a committed run is adopted by exact run ID,
+while a crash with no durable run identity moves the journal to Needs intervention instead of repeating the check.

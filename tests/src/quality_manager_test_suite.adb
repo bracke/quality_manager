@@ -7,6 +7,7 @@ with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with AUnit.Assertions; use AUnit.Assertions;
 with AUnit.Test_Caller;
+with Interfaces;
 
 with Quality_Manager.CLI;
 with Quality_Manager.Approvals;
@@ -53,6 +54,7 @@ package body Quality_Manager_Test_Suite is
    use type Quality_Manager.Policies.Permission;
    use type Quality_Manager.Priorities.Priority_Class;
    use type Quality_Manager.Reporting.Operational_View;
+   use type Interfaces.Unsigned_64;
 
    package Caller is new AUnit.Test_Caller (Fixture);
 
@@ -1197,6 +1199,24 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Storage.Put_Current (Store, Entity ("work:not-current"), Result);
       Assert (Result.Kind = Quality_Manager.Results.Authorization_Required,
               "append-only record class cannot use current-record replacement");
+      declare
+         Current : Quality_Manager.Storage.Stored_Entity :=
+           Entity ("project:current-idempotent", Quality_Manager.Storage.Project_Record);
+      begin
+         Quality_Manager.Storage.Put_Current (Store, Current, Result);
+         Quality_Manager.Storage.Read (Store, "project:current-idempotent", Loaded, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success and then Loaded.Generation = 1,
+                 "new current record starts at generation one");
+         Quality_Manager.Storage.Put_Current (Store, Current, Result);
+         Quality_Manager.Storage.Read (Store, "project:current-idempotent", Loaded, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success and then Loaded.Generation = 1,
+                 "idempotent current-record replay does not advance its fencing generation");
+         Current.Payload := To_Unbounded_String ("changed");
+         Quality_Manager.Storage.Put_Current (Store, Current, Result);
+         Quality_Manager.Storage.Read (Store, "project:current-idempotent", Loaded, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success and then Loaded.Generation = 2,
+                 "changed current-record content advances its generation once");
+      end;
       Quality_Manager.Storage.Put (Store, Entity ("work:boundary-1"), Result);
       Quality_Manager.Storage.Put (Store, Entity ("work:boundary-2"), Result);
       Quality_Manager.Storage.List
@@ -3356,6 +3376,7 @@ package body Quality_Manager_Test_Suite is
          Candidate_Commit : constant String := "fixture-commit";
          Release_Quality : Quality_Manager.Integrations.Quality.Adapter;
          Qualified_Id    : Unbounded_String;
+         First_Digest    : Unbounded_String;
       begin
          Quality_Manager.Integrations.Quality.Initialize
            (Release_Quality, Tool_Fixture, "release-quality.db", Release_Fixture);
@@ -3372,6 +3393,14 @@ package body Quality_Manager_Test_Suite is
             and then Length (Decision.Bundle_Digest) = 64,
             "configured qualification obtains fresh evidence and runs every local gate: "
             & Quality_Manager.Results.Message (Result));
+         First_Digest := Decision.Bundle_Digest;
+         Quality_Manager.Releases.Qualify_With_Tools
+           (Context, Release_Quality, To_String (Qualified_Id), Tool_Fixture, Tool_Fixture,
+            Decision, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success and then Decision.Qualified
+            and then Decision.Bundle_Digest = First_Digest,
+            "repeated qualification adopts journaled assessment and check evidence idempotently");
       end;
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;

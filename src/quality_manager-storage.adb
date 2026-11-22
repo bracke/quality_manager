@@ -153,6 +153,13 @@ package body Quality_Manager.Storage is
       and then Left.Terminal = Right.Terminal
       and then Left.Generation = Right.Generation);
 
+   function Same_Current_Content (Left, Right : Stored_Entity) return Boolean is
+     (Left.Kind = Right.Kind
+      and then Left.Entity_Key = Right.Entity_Key
+      and then Left.State = Right.State
+      and then Left.Payload = Right.Payload
+      and then Left.Terminal = Right.Terminal);
+
    function Validate_Entity (Value : Stored_Entity) return Operation_Result is
    begin
       if Length (Value.Entity_Key) = 0 then
@@ -478,7 +485,7 @@ package body Quality_Manager.Storage is
          Database.Transactions.Rollback (Tx);
          Result := Make_Result (Integrity_Error, "current entity kind mismatch", "qm.storage.current-conflict");
          return;
-      elsif Same (Existing, Value) then
+      elsif Same_Current_Content (Existing, Value) then
          Database.Transactions.Rollback (Tx);
          Result := Make_Result (Success);
          return;
