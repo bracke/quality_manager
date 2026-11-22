@@ -157,7 +157,7 @@ forced validation build, and GNATdoc generation passed.
 | P7-03 inventory synchronization | complete | validated qualified Ada Quality project inventory |
 | P7-04 source/policy/toolchain detection | complete | explicit evidence-identity due-reason classifier |
 | P7-05 due assessment scheduling | complete | enabled projects receive and execute durable assessment work |
-| P7-06 maintenance discovery | complete | independent project cycles and journaled assessment objectives |
+| P7-06 maintenance discovery | complete | journaled assessments and exact-run remediation planning |
 | P7-07 reservations and fairness | complete | global assessment/agent bounds and project writer exclusion |
 | P7-08 pause/resume/shutdown | complete | protected stop state; no dispatch while stopping |
 | P7-09 daemon and one-shot modes | complete | `maintenance`, `daemon`, and `daemon --once` CLI routes |
@@ -169,6 +169,11 @@ checks completeness and provenance. Ada Quality exit code 3 is accepted only as 
 it commits the known run identity and leaves the work inconclusive. Reconciliation does not enqueue an already-active
 identity. Current project inventory is the only replaceable record class; historical cycles, events, attempts, and
 verification evidence remain append-only.
+
+A complete assessment containing violations invokes Improve with the exact `--run` identity. The version-2 response
+must match the qualified project, assessment, and working source. Each deterministic Improve task becomes one
+globally coalescible work item in `Awaiting_Approval`; this handoff neither approves nor publishes the plan. Planning
+replay reads the exact stored revision and does not duplicate remediation work.
 
 Gate: **passed**. The 24-test suite covers deterministic priority, resource limits, restart reconstruction,
 eligibility persistence, cooperative pause/resume, qualified inventory, disabled-project isolation, complete and

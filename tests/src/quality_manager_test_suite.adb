@@ -24,6 +24,7 @@ with Quality_Manager.Integrations.Summary;
 with Quality_Manager.Journal;
 with Quality_Manager.Maintenance;
 with Quality_Manager.Model;
+with Quality_Manager.Planning;
 with Quality_Manager.Reporting;
 with Quality_Manager.Releases;
 with Quality_Manager.Results;
@@ -2662,6 +2663,7 @@ package body Quality_Manager_Test_Suite is
       Store     : aliased Quality_Manager.Storage.Store;
       Scheduler : aliased Quality_Manager.Scheduler.Scheduler_Type;
       Quality   : Quality_Manager.Integrations.Quality.Adapter;
+      Planner   : Quality_Manager.Integrations.Improve.Adapter;
       Context   : Quality_Manager.Maintenance.Context;
       Result    : Quality_Manager.Results.Operation_Result;
       Values    : Quality_Manager.Storage.Entity_Vectors.Vector;
@@ -2683,8 +2685,10 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Scheduler.Configure (Scheduler, Store'Unchecked_Access, 4, 1);
       Quality_Manager.Integrations.Quality.Initialize
         (Quality, "./bin/qm_adapter_fixture", "quality.db");
+      Quality_Manager.Integrations.Improve.Initialize
+        (Planner, "./bin/qm_adapter_fixture", "improve.toml", "quality.db", "improve.db");
       Quality_Manager.Maintenance.Initialize
-        (Context, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality);
+        (Context, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality, Planner);
       Quality_Manager.Maintenance.Run_Cycle (Context, "", False, Result);
       Assert
         (Result.Kind = Quality_Manager.Results.Success
@@ -2719,24 +2723,49 @@ package body Quality_Manager_Test_Suite is
       declare
          Verified_Count : Natural := 0;
          Inconclusive_Count : Natural := 0;
+         Approval_Count : Natural := 0;
+         Assessment_Work : Unbounded_String;
       begin
          for Value of Values loop
             if To_String (Value.State) = Quality_Manager.Model.Work_State'Image
               (Quality_Manager.Model.Verified)
             then
                Verified_Count := Verified_Count + 1;
+               Assessment_Work := Value.Entity_Key;
             elsif To_String (Value.State) = Quality_Manager.Model.Work_State'Image
               (Quality_Manager.Model.Inconclusive)
             then
                Inconclusive_Count := Inconclusive_Count + 1;
+            elsif To_String (Value.State) = Quality_Manager.Model.Work_State'Image
+              (Quality_Manager.Model.Awaiting_Approval)
+            then
+               Approval_Count := Approval_Count + 1;
+               Assert
+                 (Ada.Strings.Fixed.Index (To_String (Value.Payload), """plan_id"":""PLAN-001""") > 0
+                  and then Ada.Strings.Fixed.Index
+                    (To_String (Value.Payload), """task_id"":""IMP-001""") > 0
+                  and then Ada.Strings.Fixed.Index
+                    (To_String (Value.Payload), "finding-a\nfinding-b") > 0,
+                  "remediation work retains the exact plan task and canonical finding set");
             end if;
          end loop;
          Assert
            (Result.Kind = Quality_Manager.Results.Success
-            and then Natural (Values.Length) = 2
+            and then Natural (Values.Length) = 3
             and then Verified_Count = 1
-            and then Inconclusive_Count = 1,
-            "complete evidence verifies while completed incomplete evidence remains inconclusive");
+            and then Inconclusive_Count = 1
+            and then Approval_Count = 1,
+            "violations create approval-gated remediation while incomplete evidence remains inconclusive");
+         Quality_Manager.Planning.Generate_Or_Reconcile
+           (Store, Planner,
+            (Quality_Database_Id => To_Unbounded_String ("123e4567-e89b-12d3-a456-426614174000"),
+             Quality_Project_Id => 7,
+             Canonical_Path => To_Unbounded_String ("/project")),
+            2, "candidate-source", Quality_Manager.Model.Maintenance,
+            To_String (Assessment_Work), Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Success,
+            "committed planning recovery adopts the exact stored plan without duplicate work");
       end;
       Quality_Manager.Storage.List
         (Store, Quality_Manager.Storage.Journal_Record, Values, 10, Result);
@@ -2752,9 +2781,9 @@ package body Quality_Manager_Test_Suite is
          end loop;
          Assert
            (Result.Kind = Quality_Manager.Results.Success
-            and then Natural (Values.Length) = 2
-            and then Committed_Count = 2,
-            "complete and incomplete assessments both retain committed durable identities");
+            and then Natural (Values.Length) = 3
+            and then Committed_Count = 3,
+            "assessments and exact-run Improve planning retain committed durable identities");
       end;
       Quality_Manager.Maintenance.Run_Cycle (Context, "missing", True, Result);
       Assert (Result.Kind = Quality_Manager.Results.Not_Found,

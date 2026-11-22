@@ -1,4 +1,5 @@
 with Ada.Strings.Unbounded;
+with Quality_Manager.Integrations.Improve;
 with Quality_Manager.Integrations.Quality;
 with Quality_Manager.Results;
 with Quality_Manager.Scheduler;
@@ -37,7 +38,8 @@ package Quality_Manager.Maintenance is
      (Item      : out Context;
       Store     : Quality_Manager.Scheduler.Store_Access;
       Scheduler : access Quality_Manager.Scheduler.Scheduler_Type;
-      Quality   : Quality_Manager.Integrations.Quality.Adapter);
+      Quality   : Quality_Manager.Integrations.Quality.Adapter;
+      Planner   : Quality_Manager.Integrations.Improve.Adapter);
 
    procedure Run_Cycle
      (Item             : in out Context;
@@ -61,5 +63,6 @@ private
       Database : Quality_Manager.Scheduler.Store_Access;
       Queue    : Scheduler_Access;
       Quality  : Quality_Manager.Integrations.Quality.Adapter;
+      Planner  : Quality_Manager.Integrations.Improve.Adapter;
    end record;
 end Quality_Manager.Maintenance;

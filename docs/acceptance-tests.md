@@ -11,7 +11,7 @@ unless another repository is named.
 | AT-001 | qm_adapter_fixture, project 7 | Run assessment | Completed run 2; upstream contains violation/pass evidence; result is not an execution failure | Delete temp DB |
 | AT-002 | Same assessment ingested twice | Save identical work identity twice | One work item; no second upstream task; success/idempotent | Delete temp DB |
 | AT-003 | Project key with another database UUID | Read/attach evidence | No mutation; upstream untouched; qualified-identity mismatch | Delete temp DB |
-| AT-004 | Improve PLAN-001 revision 2 | Read_Plan | Exact revision retained; read-only upstream; success | None |
+| AT-004 | Completed assessment 2 with violation | Generate/reconcile Improve plan | Exact run, plan revision, task, and canonical finding set retained; replay creates no duplicate work | Delete temp DB |
 | AT-005 | Plan without approval | Publication precondition evaluation | No dispatch; no native task; authorization required | Delete temp DB |
 | AT-006 | Approval for revision 2, request revision 3 | Validate_Approval | Approval unchanged; no publication; authorization required | None |
 | AT-007 | Existing logical remediation and publication mapping | Bind mapping twice | One active dispatch; one native identity; idempotent success | Delete temp DB |

@@ -90,6 +90,29 @@ begin
                    else "[]") & "}");
                Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
                return;
+            elsif Ada.Strings.Fixed.Index (Text, "plan --project 7 --run 2") = 1
+              or else Text = "plan show PLAN-001 --revision 1"
+            then
+               Ada.Text_IO.Put
+                 ("{""schema_version"":2,""command"":""plan"",""data"":{" &
+                  """plan_id"":""PLAN-001"",""revision"":1,""project_id"":7," &
+                  """project"":""fixture"",""run_id"":2," &
+                  """assessment_fingerprint"":""assessment-2""," &
+                  """working_source_fingerprint"":""candidate-source""," &
+                  """fingerprint"":""plan-fingerprint"",""planner"":""deterministic""," &
+                  """agent_provider"":"""",""agent_model_sha256"":""""," &
+                  """dry_run"":false,""stored"":true,""tasks"":[{" &
+                  """id"":""IMP-001"",""title"":""Fix fixture violation""," &
+                  """category"":""correctness"",""priority"":""high""," &
+                  """candidate_kind"":""remediation"",""goal"":""pass""," &
+                  """problem"":""fixture violation"",""evidence"":""assessment 2""," &
+                  """scope"":""src"",""out_of_scope"":""api""," &
+                  """requirements"":""preserve behavior"",""acceptance"":""pass""," &
+                  """verification"":""reassess"",""confidence"":100," &
+                  """requires_review"":true,""files"":[]," &
+                  """findings"":[""finding-b"",""finding-a""],""depends_on"":[]}]}}");
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+               return;
             elsif Ada.Strings.Fixed.Index (Text, "doctor ") = 1 then
                Kind := To_Unbounded_String ("doctor-report");
             elsif Text = "database stats" then
@@ -220,7 +243,12 @@ begin
                        ("{""indicator"":""" & Indicator & """,""execution"":""succeeded""," &
                         """compliance"":""" &
                         (if Ada.Strings.Fixed.Index (Text, "--project 9") > 0 and then Result_Index = 1
-                         then "unknown" else "pass") &
+                         then "unknown"
+                         elsif Ada.Strings.Fixed.Index (Text, "--project 7") > 0
+                           and then To_String (Database_Path) = "quality.db"
+                           and then Result_Index = 1
+                         then "violation"
+                         else "pass") &
                         """,""applicable"":true,""summary"":""ok""," &
                         """evidence"":""fixture"",""measurement"":" &
                         (if Result_Index = 3 then "{""basis_points"":9000}" else "{}") &

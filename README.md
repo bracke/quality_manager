@@ -39,8 +39,10 @@ Phase 7 adds a restart-reconstructible priority scheduler and one-shot/daemon
 maintenance entry points. Enabled projects receive independent durable cycles;
 assessment work is committed before it becomes visible to workers. Workers
 revalidate the exact plan, journal the check, retain its durable assessment ID,
-and reject incomplete or mismatched evidence. Disabled or ineligible projects
-cannot stop unrelated portfolio work.
+and reject incomplete or mismatched evidence. Complete assessments with
+violations create an exact-run Improve plan and durable remediation work in
+`Awaiting_Approval`; maintenance does not bypass approval or publish it.
+Disabled or ineligible projects cannot stop unrelated portfolio work.
 
 Phase 8 adds revisioned improvement campaigns. Campaign definitions use
 `schemas/campaign-v1.schema.json`, bind qualified projects and baseline

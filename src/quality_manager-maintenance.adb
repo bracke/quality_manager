@@ -10,6 +10,7 @@ with Quality_Manager.Config;
 with Quality_Manager.Identities;
 with Quality_Manager.Integrations.JSON_CLI;
 with Quality_Manager.Model;
+with Quality_Manager.Planning;
 with Quality_Manager.Priorities;
 with Quality_Manager.Storage.Records;
 with Quality_Manager.Storage.Schema;
@@ -49,11 +50,13 @@ package body Quality_Manager.Maintenance is
      (Item      : out Context;
       Store     : Quality_Manager.Scheduler.Store_Access;
       Scheduler : access Quality_Manager.Scheduler.Scheduler_Type;
-      Quality   : Quality_Manager.Integrations.Quality.Adapter) is
+      Quality   : Quality_Manager.Integrations.Quality.Adapter;
+      Planner   : Quality_Manager.Integrations.Improve.Adapter) is
    begin
       Item.Database := Store;
       Item.Queue := Scheduler_Access (Scheduler);
       Item.Quality := Quality;
+      Item.Planner := Planner;
    end Initialize;
 
    function Natural_Field
@@ -452,6 +455,17 @@ package body Quality_Manager.Maintenance is
             "measurement work requires no source integration",
             "assessment:" & Natural'Image (Evidence.Assessment_Id), Result);
       end if;
+      if Result.Kind = Success and then Evidence.Violations > 0 then
+         Quality_Manager.Planning.Generate_Or_Reconcile
+           (Item.Database.all, Item.Planner, Project, Positive (Evidence.Assessment_Id),
+            To_String (Evidence.Source_Fingerprint), Quality_Manager.Model.Maintenance,
+            Work_Id, Local);
+         --  The assessment observation remains valid even when planning is
+         --  blocked. Its journal exposes the independent planning failure.
+         if Local.Kind /= Success then
+            Result := Make_Result (Success);
+         end if;
+      end if;
       if Result.Kind = Success then
          Transition
            (Item.Database.all, Work_Id, Quality_Manager.Model.Awaiting_Assessment,
@@ -663,6 +677,7 @@ package body Quality_Manager.Maintenance is
       Store     : aliased Quality_Manager.Storage.Store;
       Scheduler : aliased Quality_Manager.Scheduler.Scheduler_Type;
       Quality   : Quality_Manager.Integrations.Quality.Adapter;
+      Planner   : Quality_Manager.Integrations.Improve.Adapter;
       Item      : Context;
       Result    : Operation_Result;
       Close_Result : Operation_Result;
@@ -679,7 +694,10 @@ package body Quality_Manager.Maintenance is
          Quality_Manager.Integrations.Quality.Initialize
            (Quality, To_String (Settings.Ada_Quality_Executable), To_String (Settings.Quality_Database),
             Policy_Path => To_String (Settings.Quality_Policy));
-         Initialize (Item, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality);
+         Quality_Manager.Integrations.Improve.Initialize
+           (Planner, To_String (Settings.Improve_Executable), To_String (Settings.Improve_Config),
+            To_String (Settings.Quality_Database), To_String (Settings.Improve_State));
+         Initialize (Item, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality, Planner);
          Run_Cycle (Item, Project_Selector, Dry_Run or else Settings.Dry_Run, Result);
       end if;
       Quality_Manager.Scheduler.Shutdown (Scheduler);
