@@ -323,6 +323,13 @@ real violation for an oversized test source, schema lines over 120 columns, and 
 the current source. Quality Manager adopted the completed assessment as `Inconclusive`; no evidence-unavailable claim
 or false pass was produced.
 
+Improve commit `a0ceb66` migrates its evidence generator and repository checker to Ada Quality's complete v3 coverage
+contract, records every production unit, and binds the evidence to the exact Ada Quality toolchain fingerprint. The
+same change brings the staged repository checker into compliance without removing a test. Live assessment 16 completed
+against source `bb123ce7732cee51` and toolchain `7a5b142391f2b96c`: TST-03 passes at 91.31%, REL-01 passes, and both
+release-checker operations exited zero. The assessment remains noncompliant with 19 passing and 14 violating
+indicators, including BLD-03 and PRF-01; Quality Manager therefore does not claim project health.
+
 Journaled authorized publication is implemented. It requires a durable coordinator approval matching project, plan
 revision, complete content fingerprint, action, policy, and lifetime; confirms Improve's atomic approval; preflights
 and publishes the exact revision; persists the authoritative native task mapping; and safely replays both external

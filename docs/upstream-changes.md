@@ -73,6 +73,17 @@ Status: **implemented and validated** in Improve commit `3590361`. External coor
 `improve apply PLAN-ID --revision N`; preflight and publication load that immutable revision, and JSON returns its
 exact revision and complete content fingerprint. All 135 tests and the forced validation build pass.
 
+## IMP-COVERAGE-01 — Complete v3 coverage evidence
+
+Emit Ada Quality's complete production-unit inventory, per-unit covered and total line counts, the exact Ada Quality
+toolchain fingerprint, and the explicit coverage-driver exclusion. Validate compiler note records before accepting a
+unit so missing specifications or subunits cannot silently leave the denominator.
+
+Status: **implemented and validated** in Improve commit `a0ceb66`. Improve's validation builds, all 135 tests,
+focused GNATprove project, and repository checker pass. Production coverage is 8,794/9,630 lines (91.31%). Live Ada
+Quality assessment 16 accepted TST-03 and REL-01 with exact source fingerprint `bb123ce7732cee51`; both the release
+checker build and execution exited successfully.
+
 ## MR-HEADLESS-01 — Noninteractive native work
 
 Add versioned JSON commands:
