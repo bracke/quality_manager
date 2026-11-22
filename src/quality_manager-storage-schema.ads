@@ -40,6 +40,7 @@ package Quality_Manager.Storage.Schema is
       Improve_Revision    : Natural := 0;
       Improve_Task_Id     : Text;
       Improve_Content_SHA256 : Text;
+      Planned_Source_Fingerprint : Text;
       Effective_Policy_Digest : Text;
       State               : Quality_Manager.Model.Work_State := Quality_Manager.Model.Discovered;
       Outcome             : Quality_Manager.Model.Outcome_Kind := Quality_Manager.Model.No_Outcome;

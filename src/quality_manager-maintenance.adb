@@ -625,6 +625,7 @@ package body Quality_Manager.Maintenance is
                               Improve_Plan_Id => Null_Unbounded_String, Improve_Revision => 0,
                               Improve_Task_Id => Null_Unbounded_String,
                               Improve_Content_SHA256 => Null_Unbounded_String,
+                              Planned_Source_Fingerprint => Null_Unbounded_String,
                               Effective_Policy_Digest => Null_Unbounded_String,
                               State => Quality_Manager.Model.Queued,
                               Outcome => Quality_Manager.Model.No_Outcome);

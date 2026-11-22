@@ -1031,6 +1031,7 @@ package body Quality_Manager_Test_Suite is
             Improve_Revision => 0,
             Improve_Task_Id => Null_Unbounded_String,
             Improve_Content_SHA256 => Null_Unbounded_String,
+            Planned_Source_Fingerprint => Null_Unbounded_String,
             Effective_Policy_Digest => Null_Unbounded_String,
             State => Quality_Manager.Model.Discovered,
             Outcome => Quality_Manager.Model.No_Outcome);
@@ -1711,7 +1712,9 @@ package body Quality_Manager_Test_Suite is
       Path : constant String := "/tmp/quality-manager-publication.database";
       Store : Quality_Manager.Storage.Store;
       Planner : Quality_Manager.Integrations.Improve.Adapter;
+      Runner : Quality_Manager.Integrations.Runner.Adapter;
       Result : Quality_Manager.Results.Operation_Result;
+      Snapshot : Quality_Manager.Integrations.Runner.Task_Snapshot;
       Loaded : Quality_Manager.Storage.Stored_Entity;
       Project : constant Quality_Manager.Identities.Project_Key :=
         (To_Unbounded_String ("database-a"), 7, To_Unbounded_String ("/project"));
@@ -1724,6 +1727,7 @@ package body Quality_Manager_Test_Suite is
          Improve_Task_Id => To_Unbounded_String ("IMP-001"),
          Improve_Content_SHA256 => To_Unbounded_String
            ("plan-content-sha256-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+         Planned_Source_Fingerprint => To_Unbounded_String ("source-fingerprint"),
          Effective_Policy_Digest => To_Unbounded_String ("policy-1"),
          State => Quality_Manager.Model.Awaiting_Approval,
          Outcome => Quality_Manager.Model.Authorization_Required);
@@ -1784,6 +1788,45 @@ package body Quality_Manager_Test_Suite is
       Quality_Manager.Dispatch.Publish_Approved
         (Store, Planner, Work, Approval, 50, Published, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success, "publication replay is idempotent");
+      Quality_Manager.Integrations.Runner.Initialize (Runner, "./bin/qm_adapter_fixture");
+      declare
+         Stale_Work : Quality_Manager.Storage.Schema.Work_Item := Work;
+         Stale_Mapping : Quality_Manager.Storage.Schema.Dispatch := Published;
+      begin
+         Stale_Work.Work_Id := To_Unbounded_String ("work:publication-stale");
+         Stale_Work.Global_Remediation := To_Unbounded_String ("remediation:publication-stale");
+         Stale_Work.Planned_Source_Fingerprint := To_Unbounded_String ("obsolete-source");
+         Stale_Mapping.Dispatch_Id := To_Unbounded_String ("dispatch:publication-stale");
+         Stale_Mapping.Work_Id := Stale_Work.Work_Id;
+         Stale_Mapping.Logical_Remediation := Stale_Work.Global_Remediation;
+         Quality_Manager.Storage.Records.Save (Store, Stale_Work, Result);
+         Quality_Manager.Dispatch.Bind_Published_Task (Store, Stale_Mapping, Result);
+         Quality_Manager.Dispatch.Execute_Persisted
+           (Store, Runner, "work:publication-stale", "coordinator:publication", 50, 100,
+            Snapshot, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Stale_Evidence,
+            "native source drift is rejected before execution");
+      end;
+      Quality_Manager.Dispatch.Execute_Persisted
+        (Store, Runner, "work:publication", "coordinator:publication", 50, 100,
+         Snapshot, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Snapshot.State = Quality_Manager.Integrations.Runner.Awaiting_Integration_State,
+         "published mapping is reconstructed and executed from durable state: "
+         & Quality_Manager.Results.Message (Result));
+      Quality_Manager.Storage.Read (Store, "work:publication", Loaded, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then To_String (Loaded.State) = Quality_Manager.Model.Awaiting_Integration'Image,
+         "native execution advances durable work to independent integration");
+      Quality_Manager.Dispatch.Execute_Persisted
+        (Store, Runner, "work:publication", "coordinator:publication", 60, 110,
+         Snapshot, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Not_Ready,
+         "completed native execution cannot be dispatched twice");
       Quality_Manager.Storage.Close (Store, Result);
       Cleanup;
    exception
@@ -2462,6 +2505,7 @@ package body Quality_Manager_Test_Suite is
          Improve_Task_Id    => To_Unbounded_String ("IMP-001"),
          Improve_Content_SHA256 => To_Unbounded_String
            ("plan-content-sha256-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+         Planned_Source_Fingerprint => To_Unbounded_String ("candidate-source"),
          Effective_Policy_Digest => To_Unbounded_String ("policy"),
          State              => Quality_Manager.Model.Awaiting_Assessment,
          Outcome            => Quality_Manager.Model.No_Outcome);
@@ -2743,6 +2787,7 @@ package body Quality_Manager_Test_Suite is
          Finding_Identities => To_Unbounded_String ("AQ-01"), Priority => 510,
          Improve_Plan_Id => To_Unbounded_String ("plan-1"), Improve_Revision => 1,
          Improve_Task_Id => To_Unbounded_String ("task-1"), Improve_Content_SHA256 => Null_Unbounded_String,
+         Planned_Source_Fingerprint => Null_Unbounded_String,
          Effective_Policy_Digest => Null_Unbounded_String,
          State => Quality_Manager.Model.Queued,
          Outcome => Quality_Manager.Model.No_Outcome);
@@ -2753,6 +2798,7 @@ package body Quality_Manager_Test_Suite is
          Finding_Identities => To_Unbounded_String ("TST-03"), Priority => 150,
          Improve_Plan_Id => To_Unbounded_String ("plan-2"), Improve_Revision => 1,
          Improve_Task_Id => To_Unbounded_String ("task-2"), Improve_Content_SHA256 => Null_Unbounded_String,
+         Planned_Source_Fingerprint => Null_Unbounded_String,
          Effective_Policy_Digest => Null_Unbounded_String,
          State => Quality_Manager.Model.Queued,
          Outcome => Quality_Manager.Model.No_Outcome);
@@ -2969,6 +3015,9 @@ package body Quality_Manager_Test_Suite is
                   and then Ada.Strings.Fixed.Index
                     (To_String (Value.Payload), """task_id"":""IMP-001""") > 0
                   and then Ada.Strings.Fixed.Index
+                    (To_String (Value.Payload),
+                     """planned_source_fingerprint"":""candidate-source""") > 0
+                  and then Ada.Strings.Fixed.Index
                     (To_String (Value.Payload), "finding-a\nfinding-b") > 0,
                   "remediation work retains the exact plan task and canonical finding set");
             end if;
@@ -3044,6 +3093,7 @@ package body Quality_Manager_Test_Suite is
          Finding_Identities => To_Unbounded_String ("TST-03"), Priority => 150,
          Improve_Plan_Id => Null_Unbounded_String, Improve_Revision => 0,
          Improve_Task_Id => Null_Unbounded_String, Improve_Content_SHA256 => Null_Unbounded_String,
+         Planned_Source_Fingerprint => Null_Unbounded_String,
          Effective_Policy_Digest => Null_Unbounded_String,
          State => Quality_Manager.Model.Planning,
          Outcome => Quality_Manager.Model.No_Outcome);

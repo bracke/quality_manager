@@ -281,6 +281,7 @@ package body Quality_Manager.Planning is
      (Store          : in out Quality_Manager.Storage.Store;
       Project        : Quality_Manager.Identities.Project_Key;
       Assessment_Run : Positive;
+      Candidate_Source : String;
       Policy_Digest  : String;
       Workflow       : Quality_Manager.Model.Workflow_Kind;
       Plan           : Plan_Result;
@@ -307,6 +308,7 @@ package body Quality_Manager.Planning is
                   Improve_Revision => Plan.Revision,
                   Improve_Task_Id => Plan_Task.Task_Id,
                   Improve_Content_SHA256 => Plan.Content_SHA256,
+                  Planned_Source_Fingerprint => To_Unbounded_String (Candidate_Source),
                   Effective_Policy_Digest => To_Unbounded_String (Policy_Digest),
                   State => Quality_Manager.Model.Awaiting_Approval,
                   Outcome => Quality_Manager.Model.Authorization_Required),
@@ -446,7 +448,8 @@ package body Quality_Manager.Planning is
          end if;
       end if;
 
-      Persist_Tasks (Store, Project, Assessment_Run, Policy_Digest, Workflow, Plan, Result);
+      Persist_Tasks
+        (Store, Project, Assessment_Run, Candidate_Source, Policy_Digest, Workflow, Plan, Result);
       if Result.Kind /= Success then
          return;
       end if;

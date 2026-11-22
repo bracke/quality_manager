@@ -289,3 +289,10 @@ Journaled authorized publication is implemented. It requires a durable coordinat
 revision, complete content fingerprint, action, policy, and lifetime; confirms Improve's atomic approval; preflights
 and publishes the exact revision; persists the authoritative native task mapping; and safely replays both external
 operations. Fixture-backed acceptance coverage passes; live publication still requires an applicable approved plan.
+
+Published remediation can now be reconstructed from the coordinator database and dispatched through model_runner's
+native headless engine. The worker binds execution to the assessed source fingerprint retained with the Improve work,
+the exact active publication mapping, native task revision, project identity, execution policy, and a fenced project
+lease. Source drift is rejected before execution, and a completed isolated task advances only to
+`Awaiting_Integration`; replay cannot start a second native execution. Scheduler discovery of durable approvals and
+automatic integration/reassessment remain the next coordination slice.

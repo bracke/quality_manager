@@ -7,6 +7,22 @@ with Ada.Text_IO;
 procedure QM_Adapter_Fixture is
    Status : Integer := 0;
    Numeric_Mode : Boolean := False;
+
+   function Option_Value (Text, Name : String) return String is
+      Marker : constant String := "--" & Name & " ";
+      First  : Natural := Ada.Strings.Fixed.Index (Text, Marker);
+      Last   : Natural;
+   begin
+      if First = 0 then
+         return "";
+      end if;
+      First := First + Marker'Length;
+      Last := First;
+      while Last <= Text'Last and then Text (Last) /= ' ' loop
+         Last := Last + 1;
+      end loop;
+      return Text (First .. Last - 1);
+   end Option_Value;
 begin
    if Ada.Command_Line.Argument_Count >= 1 then
       begin
@@ -196,9 +212,12 @@ begin
                      elsif Ada.Strings.Fixed.Index (Text, "qm-execution-7") > 0 then "qm-execution-7"
                      elsif Ada.Strings.Fixed.Index (Text, "qm-execution-8") > 0 then "qm-execution-8"
                      elsif Ada.Strings.Fixed.Index (Text, "qm-execution-9") > 0 then "qm-execution-9"
-                     else "qm-execution-1");
+                     elsif Option_Value (Text, "operation-id") /= ""
+                     then Option_Value (Text, "operation-id")
+                     else "inspect-operation");
                   Is_Execute : constant Boolean := Ada.Strings.Fixed.Index (Text, "work execute ") = 1;
                   Is_Integrate : constant Boolean := Ada.Strings.Fixed.Index (Text, "work integrate ") = 1;
+                  Is_Inspect : constant Boolean := Ada.Strings.Fixed.Index (Text, "work inspect ") = 1;
                   Running : constant Boolean :=
                     Operation in "qm-execution-2" | "qm-execution-6" | "qm-execution-7"
                     and then Is_Execute;
@@ -219,19 +238,23 @@ begin
                      """task_revision"":""task-revision"",""effective_task_revision"":""effective-revision""," &
                      """execution_policy"":""policy-fingerprint"",""execution_generation"":""1""," &
                      """execution_state"":""" &
-                     (if Incompatible then "incompatible"
+                     (if Is_Inspect then "ready"
+                      elsif Incompatible then "incompatible"
                       elsif Cancelled then "cancelled"
                       elsif Failed then "failed"
                       elsif Running then "executing"
                       elsif Is_Integrate and then not Pending_Integration
                       then "completed" else "awaiting_integration") &
                      """,""native_task_state"":""" &
-                     (if Running then "running" elsif Failed then "failed"
+                     (if Is_Inspect then "ready"
+                      elsif Running then "running" elsif Failed then "failed"
                       elsif Cancelled then "cancelled" else "verification") &
                      """,""core_state"":""" &
-                     (if Running then "running" elsif Failed then "failed"
+                     (if Is_Inspect then "ready"
+                      elsif Running then "running" elsif Failed then "failed"
                       elsif Cancelled then "cancelled" else "verification") &
-                     """,""ready"":false,""readiness_reasons"":[]," &
+                     """,""ready"":" & (if Is_Inspect then "true" else "false") &
+                     ",""readiness_reasons"":[]," &
                      """workspace_id"":""" & (if Is_Integrate then "" else "workspace-1") &
                      """,""workspace_state"":""" &
                      (if Is_Integrate and then not Pending_Integration then "integrated" else "active") &
