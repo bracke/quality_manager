@@ -316,6 +316,13 @@ all executed successfully. Quality Manager correctly retained `Inconclusive`: pr
 inventory, the release checker is absent from the clean staged build, and measured warning, source, documentation, and
 proof violations remain. These are now quality/evidence results rather than orchestration or staging failures.
 
+Ada Quality commit `fe57295` closes the clean release-checker gap by discovering the checker GPR project and building
+its declared `check_all` main inside the isolated workspace. Live assessment 15 retained the same exact source and
+toolchain fingerprints, recorded a successful `release-checker-build`, and executed the checker. REL-01 now reports a
+real violation for an oversized test source, schema lines over 120 columns, and coverage evidence that does not match
+the current source. Quality Manager adopted the completed assessment as `Inconclusive`; no evidence-unavailable claim
+or false pass was produced.
+
 Journaled authorized publication is implemented. It requires a durable coordinator approval matching project, plan
 revision, complete content fingerprint, action, policy, and lifetime; confirms Improve's atomic approval; preflights
 and publishes the exact revision; persists the authoritative native task mapping; and safely replays both external

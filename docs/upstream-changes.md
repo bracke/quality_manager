@@ -38,6 +38,17 @@ escape case. Pinned subcrates retain their bounded repository layout while VCS m
 excluded. The full Ada Quality test action, forced production build, GNATdoc generation, and live `improve` assessment
 passed the staging boundary.
 
+## AQ-RELEASE-01 — Build release checkers in clean workspaces
+
+Discover a conventional `check_all` main from the root, `tools/`, or `tests/` GPR project and build it inside the
+isolated workspace before evaluating REL-01. A generated checker in the registered source tree must not be required,
+and a build failure must remain distinguishable from unavailable evidence and a completed negative gate.
+
+Status: **implemented and validated** in Ada Quality commit `fe57295`. A clean fixture supplies only a GPR project and
+checker source. The official test action, forced production build, GNATdoc generation, and changed-source gates pass.
+Live `improve` assessment 15 built and ran the checker: REL-01 is now a reproducible violation rather than unknown
+evidence.
+
 ## AQS-PAGE-01 — Complete Summary enumeration
 
 Add snapshot-bound cursor pagination to collection JSON or a typed API returning the complete bounded report. Cursors
