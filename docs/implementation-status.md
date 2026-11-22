@@ -330,6 +330,14 @@ against source `bb123ce7732cee51` and toolchain `7a5b142391f2b96c`: TST-03 passe
 release-checker operations exited zero. The assessment remains noncompliant with 19 passing and 14 violating
 indicators, including BLD-03 and PRF-01; Quality Manager therefore does not claim project health.
 
+Ada Quality commit `325ddb7` corrects the canonical inventory for named GPR object directories such as `obj-e2e` and
+`obj-signal`. Assessment 17 confirmed that generated binder sources no longer affect authored-source or security
+indicators, then correctly rejected coverage carrying the former source identity. Improve commit `c304f3f` refreshed
+the evidence without changing its measured 91.31% coverage. Final assessment 18 retained source
+`3172b2a8e66504a8` and toolchain `7a5b142391f2b96c`, passed TST-03 and REL-01, and reduced the result to 24 passing
+and 9 violating indicators. The remaining violations are genuine project or release-environment work; the
+coordinator still does not claim project health.
+
 Journaled authorized publication is implemented. It requires a durable coordinator approval matching project, plan
 revision, complete content fingerprint, action, policy, and lifetime; confirms Improve's atomic approval; preflights
 and publishes the exact revision; persists the authoritative native task mapping; and safely replays both external

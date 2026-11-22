@@ -49,6 +49,17 @@ checker source. The official test action, forced production build, GNATdoc gener
 Live `improve` assessment 15 built and ran the checker: REL-01 is now a reproducible violation rather than unknown
 evidence.
 
+## AQ-OBJECT-DIRS-01 — Exclude named GPR object directories
+
+Treat conventional `obj-*` GPR object directories as generated state for source identity, isolated staging, source
+analysis, and artifact inventory. Generated binder `.adb` and `.ads` files must not be reported as authored source or
+security findings, while their build artifacts remain visible to deterministic artifact fingerprinting.
+
+Status: **implemented and validated** in Ada Quality commit `325ddb7`. The 60-test suite, forced production build,
+changed-source scan, 90.22% coverage, and repository release checker pass. Live Improve assessment 18 retained exact
+source fingerprint `3172b2a8e66504a8` and eliminated 264 generated-file findings: SRC-01, SRC-04, SRC-06, SEC-02, and
+SEC-03 now pass.
+
 ## AQS-PAGE-01 — Complete Summary enumeration
 
 Add snapshot-bound cursor pagination to collection JSON or a typed API returning the complete bounded report. Cursors
@@ -79,10 +90,10 @@ Emit Ada Quality's complete production-unit inventory, per-unit covered and tota
 toolchain fingerprint, and the explicit coverage-driver exclusion. Validate compiler note records before accepting a
 unit so missing specifications or subunits cannot silently leave the denominator.
 
-Status: **implemented and validated** in Improve commit `a0ceb66`. Improve's validation builds, all 135 tests,
-focused GNATprove project, and repository checker pass. Production coverage is 8,794/9,630 lines (91.31%). Live Ada
-Quality assessment 16 accepted TST-03 and REL-01 with exact source fingerprint `bb123ce7732cee51`; both the release
-checker build and execution exited successfully.
+Status: **implemented and validated** in Improve commits `a0ceb66` and `c304f3f`. Improve's validation builds, all 135
+tests, focused GNATprove project, and repository checker pass. Production coverage is 8,794/9,630 lines (91.31%). Live
+Ada Quality assessment 18 accepted TST-03 and REL-01 with corrected exact source fingerprint `3172b2a8e66504a8`;
+both the release checker build and execution exited successfully.
 
 ## MR-HEADLESS-01 — Noninteractive native work
 
