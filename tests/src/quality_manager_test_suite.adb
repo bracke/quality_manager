@@ -1031,6 +1031,7 @@ package body Quality_Manager_Test_Suite is
             Improve_Revision => 0,
             Improve_Task_Id => Null_Unbounded_String,
             Improve_Content_SHA256 => Null_Unbounded_String,
+            Effective_Policy_Digest => Null_Unbounded_String,
             State => Quality_Manager.Model.Discovered,
             Outcome => Quality_Manager.Model.No_Outcome);
          Dispatch : Quality_Manager.Storage.Schema.Dispatch :=
@@ -2366,6 +2367,7 @@ package body Quality_Manager_Test_Suite is
          Improve_Task_Id    => To_Unbounded_String ("IMP-001"),
          Improve_Content_SHA256 => To_Unbounded_String
            ("plan-content-sha256-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+         Effective_Policy_Digest => To_Unbounded_String ("policy"),
          State              => Quality_Manager.Model.Awaiting_Assessment,
          Outcome            => Quality_Manager.Model.No_Outcome);
       Request   : constant Quality_Manager.Verification.Remediation_Request :=
@@ -2646,6 +2648,7 @@ package body Quality_Manager_Test_Suite is
          Finding_Identities => To_Unbounded_String ("AQ-01"), Priority => 510,
          Improve_Plan_Id => To_Unbounded_String ("plan-1"), Improve_Revision => 1,
          Improve_Task_Id => To_Unbounded_String ("task-1"), Improve_Content_SHA256 => Null_Unbounded_String,
+         Effective_Policy_Digest => Null_Unbounded_String,
          State => Quality_Manager.Model.Queued,
          Outcome => Quality_Manager.Model.No_Outcome);
       Work_2 : constant Quality_Manager.Storage.Schema.Work_Item :=
@@ -2655,6 +2658,7 @@ package body Quality_Manager_Test_Suite is
          Finding_Identities => To_Unbounded_String ("TST-03"), Priority => 150,
          Improve_Plan_Id => To_Unbounded_String ("plan-2"), Improve_Revision => 1,
          Improve_Task_Id => To_Unbounded_String ("task-2"), Improve_Content_SHA256 => Null_Unbounded_String,
+         Effective_Policy_Digest => Null_Unbounded_String,
          State => Quality_Manager.Model.Queued,
          Outcome => Quality_Manager.Model.No_Outcome);
 
@@ -2886,7 +2890,7 @@ package body Quality_Manager_Test_Suite is
             (Quality_Database_Id => To_Unbounded_String ("123e4567-e89b-12d3-a456-426614174000"),
              Quality_Project_Id => 7,
              Canonical_Path => To_Unbounded_String ("/project")),
-            2, "candidate-source", Quality_Manager.Model.Maintenance,
+            2, "candidate-source", "policy", Quality_Manager.Model.Maintenance,
             To_String (Assessment_Work), Result);
          Assert
            (Result.Kind = Quality_Manager.Results.Success,
@@ -2945,6 +2949,7 @@ package body Quality_Manager_Test_Suite is
          Finding_Identities => To_Unbounded_String ("TST-03"), Priority => 150,
          Improve_Plan_Id => Null_Unbounded_String, Improve_Revision => 0,
          Improve_Task_Id => Null_Unbounded_String, Improve_Content_SHA256 => Null_Unbounded_String,
+         Effective_Policy_Digest => Null_Unbounded_String,
          State => Quality_Manager.Model.Planning,
          Outcome => Quality_Manager.Model.No_Outcome);
 

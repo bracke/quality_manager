@@ -11,6 +11,7 @@ package Quality_Manager.Planning is
       Project          : Quality_Manager.Identities.Project_Key;
       Assessment_Run   : Positive;
       Candidate_Source : String;
+      Policy_Digest    : String;
       Workflow         : Quality_Manager.Model.Workflow_Kind;
       Stable_Id        : String;
       Result           : out Quality_Manager.Results.Operation_Result);

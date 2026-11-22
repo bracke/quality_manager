@@ -281,6 +281,7 @@ package body Quality_Manager.Planning is
      (Store          : in out Quality_Manager.Storage.Store;
       Project        : Quality_Manager.Identities.Project_Key;
       Assessment_Run : Positive;
+      Policy_Digest  : String;
       Workflow       : Quality_Manager.Model.Workflow_Kind;
       Plan           : Plan_Result;
       Result         : out Operation_Result) is
@@ -306,6 +307,7 @@ package body Quality_Manager.Planning is
                   Improve_Revision => Plan.Revision,
                   Improve_Task_Id => Plan_Task.Task_Id,
                   Improve_Content_SHA256 => Plan.Content_SHA256,
+                  Effective_Policy_Digest => To_Unbounded_String (Policy_Digest),
                   State => Quality_Manager.Model.Awaiting_Approval,
                   Outcome => Quality_Manager.Model.Authorization_Required),
                Result);
@@ -323,6 +325,7 @@ package body Quality_Manager.Planning is
       Project          : Quality_Manager.Identities.Project_Key;
       Assessment_Run   : Positive;
       Candidate_Source : String;
+      Policy_Digest    : String;
       Workflow         : Quality_Manager.Model.Workflow_Kind;
       Stable_Id        : String;
       Result           : out Operation_Result) is
@@ -337,6 +340,7 @@ package body Quality_Manager.Planning is
           Quality_Manager.Identities.Text_Value (To_String (Project.Canonical_Path)),
           Quality_Manager.Identities.Number_Value (Interfaces.Unsigned_64 (Assessment_Run)),
           Quality_Manager.Identities.Text_Value (Candidate_Source),
+          Quality_Manager.Identities.Text_Value (Policy_Digest),
           Quality_Manager.Identities.Text_Value
             (Quality_Manager.Model.Workflow_Kind'Image (Workflow))]);
       Item     : Quality_Manager.Storage.Stored_Entity;
@@ -442,7 +446,7 @@ package body Quality_Manager.Planning is
          end if;
       end if;
 
-      Persist_Tasks (Store, Project, Assessment_Run, Workflow, Plan, Result);
+      Persist_Tasks (Store, Project, Assessment_Run, Policy_Digest, Workflow, Plan, Result);
       if Result.Kind /= Success then
          return;
       end if;

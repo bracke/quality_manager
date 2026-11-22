@@ -458,7 +458,8 @@ package body Quality_Manager.Maintenance is
       if Result.Kind = Success and then Evidence.Violations > 0 then
          Quality_Manager.Planning.Generate_Or_Reconcile
            (Item.Database.all, Item.Planner, Project, Positive (Evidence.Assessment_Id),
-            To_String (Evidence.Source_Fingerprint), Quality_Manager.Model.Maintenance,
+            To_String (Evidence.Source_Fingerprint), To_String (Evidence.Policy_Fingerprint),
+            Quality_Manager.Model.Maintenance,
             Work_Id, Local);
          --  The assessment observation remains valid even when planning is
          --  blocked. Its journal exposes the independent planning failure.
@@ -624,6 +625,7 @@ package body Quality_Manager.Maintenance is
                               Improve_Plan_Id => Null_Unbounded_String, Improve_Revision => 0,
                               Improve_Task_Id => Null_Unbounded_String,
                               Improve_Content_SHA256 => Null_Unbounded_String,
+                              Effective_Policy_Digest => Null_Unbounded_String,
                               State => Quality_Manager.Model.Queued,
                               Outcome => Quality_Manager.Model.No_Outcome);
                         begin

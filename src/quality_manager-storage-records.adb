@@ -85,6 +85,7 @@ package body Quality_Manager.Storage.Records is
             & ",""plan_revision"":" & N (Value.Improve_Revision)
             & ",""task_id"":" & Q (To_String (Value.Improve_Task_Id))
             & ",""content_sha256"":" & Q (To_String (Value.Improve_Content_SHA256))
+            & ",""policy_digest"":" & Q (To_String (Value.Effective_Policy_Digest))
             & ",""outcome"":" & Q (Quality_Manager.Model.Outcome_Kind'Image (Value.Outcome)) & "}"),
          Terminal => Quality_Manager.Transitions.Is_Terminal (Value.State),
          Generation => 1);
