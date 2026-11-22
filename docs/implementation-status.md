@@ -256,7 +256,7 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | Task | State | Evidence |
 | --- | --- | --- |
 | P11-01 complete AUnit suites | complete | 25/25 tests pass, including executable CLI acceptance |
-| P11-02 90% production coverage | complete | 6,391/7,099 production body lines, 90.0268%; full implemented scope is measured |
+| P11-02 90% production coverage | complete | 6,583/7,313 production body lines, 90.0178%; the CLI and all bodies are measured |
 | P11-03 applicable GNATprove | complete | Journal state machine SPARK flow/proof passes |
 | P11-04 GNATdoc | complete | project documentation generation succeeds |
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
@@ -386,5 +386,5 @@ available; the unpinned `alire.release.toml` records the intended source-only de
 Coordinator ownership now uses an expiry-aware durable lease with fencing generations and renewal before external
 work. The suite kills a helper process without finalization, reopens its database, reconstructs the prepared journal
 intent, rejects a competing opener, verifies expired-owner takeover, and completes 128 acquire/release cycles. The
-full production measurement is 6,391/7,099 lines (90.0268%), satisfying the stabilization gate without exclusions or
+full production measurement is 6,583/7,313 lines (90.0178%), satisfying the stabilization gate without exclusions or
 carrying forward an earlier partial-scope result.

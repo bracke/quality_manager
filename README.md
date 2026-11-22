@@ -72,6 +72,6 @@ See `docs/quality-manager.1` for the operator reference.
 Phase 11 stabilization currently passes the 25-test AUnit suite and the
 warnings-as-errors validation build. Real maintenance and campaign records are
 complete. The exact-candidate release run is correctly blocked by quality
-failures. Full-scope production coverage is 6,391/7,099 lines (90.0268%), which
+failures. Full-scope production coverage is 6,583/7,313 lines (90.0178%), which
 passes the stabilization threshold. See `docs/release-checklist.md` and
 `docs/implementation-status.md`.

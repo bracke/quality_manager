@@ -6,51 +6,79 @@ package body Quality_Manager.Integrations.JSON_CLI is
    use type Quality_Manager.Results.Result_Kind;
    use Quality_Manager.Results;
 
-   function Exit_Result (Contract : Exit_Contract; Code : Integer) return Operation_Result is
+   function Ada_Quality_Exit_Result (Code : Integer) return Operation_Result is
    begin
-      case Contract is
-         when Ada_Quality_Contract =>
-            case Code is
-               when 0      => return Make_Result (Success);
-               when 1      => return Make_Result (Negative_Result, "quality assessment found violations");
-               when 2      => return Make_Result (Invalid_Request, "Ada Quality rejected the request");
-               when 3      => return Make_Result (Stale_Evidence, "quality evidence is incomplete or unavailable");
-               when 4      => return Make_Result (Integrity_Error, "Ada Quality database or evidence failure");
-               when others => return Make_Result (Execution_Error, "unknown Ada Quality exit status");
-            end case;
-         when Summary_Contract =>
-            case Code is
-               when 0      => return Make_Result (Success);
-               when 1      => return Make_Result (Negative_Result, "Summary fail-on condition holds");
-               when 2      => return Make_Result (Invalid_Request, "Summary rejected the request");
-               when 3      => return Make_Result (Execution_Error, "Summary reporting failed");
-               when 4      => return Make_Result (Integrity_Error, "Summary database failure");
-               when others => return Make_Result (Execution_Error, "unknown Summary exit status");
-            end case;
-         when Improve_Contract =>
-            case Code is
-               when 0      => return Make_Result (Success);
-               when 1      => return Make_Result (Negative_Result, "Improve reports unresolved work");
-               when 2      => return Make_Result (Invalid_Request, "Improve rejected the request");
-               when 3      => return Make_Result (Temporarily_Unavailable, "Improve dependency is unavailable");
-               when 4      => return Make_Result (Execution_Error, "Improve operation failed");
-               when 130    => return Make_Result (Interrupted, "Improve operation was interrupted");
-               when others => return Make_Result (Execution_Error, "unknown Improve exit status");
-            end case;
-         when Model_Runner_Contract =>
-            case Code is
-               when 0      => return Make_Result (Success);
-               when 2      => return Make_Result (Invalid_Request, "model_runner rejected the request");
-               when 3      => return Make_Result (Execution_Error, "model_runner model execution failed");
-               when 4      => return Make_Result (Incompatible_Contract, "model_runner operation is unsupported");
-               when 5      => return Make_Result (Temporarily_Unavailable, "model_runner resource is unavailable");
-               when 6      => return Make_Result (Negative_Result, "model_runner native work did not succeed");
-               when 7      => return Make_Result (Interrupted, "model_runner operation was interrupted");
-               when 8      => return Make_Result (Execution_Error, "model_runner internal operation failed");
-               when others => return Make_Result (Execution_Error, "unknown model_runner exit status");
-            end case;
+      case Code is
+         when 0      => return Make_Result (Success);
+         when 1      => return Make_Result (Negative_Result, "quality assessment found violations");
+         when 2      => return Make_Result (Invalid_Request, "Ada Quality rejected the request");
+         when 3      => return Make_Result (Stale_Evidence, "quality evidence is incomplete or unavailable");
+         when 4      => return Make_Result (Integrity_Error, "Ada Quality database or evidence failure");
+         when others => return Make_Result (Execution_Error, "unknown Ada Quality exit status");
       end case;
-   end Exit_Result;
+   end Ada_Quality_Exit_Result;
+
+   function Summary_Exit_Result (Code : Integer) return Operation_Result is
+   begin
+      case Code is
+         when 0      => return Make_Result (Success);
+         when 1      => return Make_Result (Negative_Result, "Summary fail-on condition holds");
+         when 2      => return Make_Result (Invalid_Request, "Summary rejected the request");
+         when 3      => return Make_Result (Execution_Error, "Summary reporting failed");
+         when 4      => return Make_Result (Integrity_Error, "Summary database failure");
+         when others => return Make_Result (Execution_Error, "unknown Summary exit status");
+      end case;
+   end Summary_Exit_Result;
+
+   function Improve_Exit_Result (Code : Integer) return Operation_Result is
+   begin
+      case Code is
+         when 0      => return Make_Result (Success);
+         when 1      => return Make_Result (Negative_Result, "Improve reports unresolved work");
+         when 2      => return Make_Result (Invalid_Request, "Improve rejected the request");
+         when 3      => return Make_Result (Temporarily_Unavailable, "Improve dependency is unavailable");
+         when 4      => return Make_Result (Execution_Error, "Improve operation failed");
+         when 130    => return Make_Result (Interrupted, "Improve operation was interrupted");
+         when others => return Make_Result (Execution_Error, "unknown Improve exit status");
+      end case;
+   end Improve_Exit_Result;
+
+   function Model_Runner_Base_Exit_Result (Code : Integer) return Operation_Result is
+   begin
+      case Code is
+         when 0      => return Make_Result (Success);
+         when 2      => return Make_Result (Invalid_Request, "model_runner rejected the request");
+         when 3      => return Make_Result (Execution_Error, "model_runner model execution failed");
+         when 4      => return Make_Result (Incompatible_Contract, "model_runner operation is unsupported");
+         when others => return Make_Result (Execution_Error, "unknown model_runner exit status");
+      end case;
+   end Model_Runner_Base_Exit_Result;
+
+   function Model_Runner_Extended_Exit_Result (Code : Integer) return Operation_Result is
+   begin
+      case Code is
+         when 5      => return Make_Result (Temporarily_Unavailable, "model_runner resource is unavailable");
+         when 6      => return Make_Result (Negative_Result, "model_runner native work did not succeed");
+         when 7      => return Make_Result (Interrupted, "model_runner operation was interrupted");
+         when 8      => return Make_Result (Execution_Error, "model_runner internal operation failed");
+         when others => return Make_Result (Execution_Error, "unknown model_runner exit status");
+      end case;
+   end Model_Runner_Extended_Exit_Result;
+
+   function Model_Runner_Exit_Result (Code : Integer) return Operation_Result is
+   begin
+      case Code is
+         when 0 .. 4 => return Model_Runner_Base_Exit_Result (Code);
+         when others => return Model_Runner_Extended_Exit_Result (Code);
+      end case;
+   end Model_Runner_Exit_Result;
+
+   function Exit_Result (Contract : Exit_Contract; Code : Integer) return Operation_Result is
+     (case Contract is
+         when Ada_Quality_Contract => Ada_Quality_Exit_Result (Code),
+         when Summary_Contract => Summary_Exit_Result (Code),
+         when Improve_Contract => Improve_Exit_Result (Code),
+         when Model_Runner_Contract => Model_Runner_Exit_Result (Code));
 
    procedure Execute
      (Executable        : String;

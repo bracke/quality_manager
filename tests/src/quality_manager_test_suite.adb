@@ -260,6 +260,14 @@ package body Quality_Manager_Test_Suite is
       Options : Quality_Manager.CLI.Options;
       Result  : Quality_Manager.Results.Operation_Result;
    begin
+      Quality_Manager.CLI.Parse (Args, Options, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success, "empty command line selects help");
+
+      Args.Append ("--config=");
+      Quality_Manager.CLI.Parse (Args, Options, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "empty inline config path rejected");
+
+      Args.Clear;
       Args.Append ("--config");
       Quality_Manager.CLI.Parse (Args, Options, Result);
       Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "missing option value rejected");
@@ -472,6 +480,16 @@ package body Quality_Manager_Test_Suite is
       Write_Raw ("{""schema_version"":1}");
       Quality_Manager.Approvals.Apply_Decision (Store, Definition, True, Result);
       Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "incomplete approval record is rejected");
+      Write_Raw
+        ("{""schema_version"":1,""decision"":""approve""," &
+         """approval_id"":""approval-negative"",""quality_database_id"":""database-a""," &
+         """quality_project_id"":7,""canonical_path"":""/project""," &
+         """plan_id"":""PLAN-001"",""plan_revision"":2," &
+         """content_sha256"":""content-digest"",""authorized_action"":""publish""," &
+         """policy_sha256"":""policy-digest"",""approver"":""operator""," &
+         """created_at"":-1,""expires_at"":100}");
+      Quality_Manager.Approvals.Apply_Decision (Store, Definition, True, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "negative approval timestamp rejected");
       Write_Approval ("reject");
       Quality_Manager.Approvals.Apply_Decision (Store, Definition, True, Result);
       Assert
@@ -741,6 +759,26 @@ package body Quality_Manager_Test_Suite is
         (Run (Args ("--config", Config_Path, "approve", "/tmp/no-such-decision.json"), 1));
       Output := To_Unbounded_String
         (Run (Args ("--config", "/tmp/no-such-quality-manager-config.toml", "status"), 1));
+      Output := To_Unbounded_String
+        (Run (Args ("--config", "/tmp/no-such-quality-manager-config.toml", "doctor"), 1));
+      Output := To_Unbounded_String
+        (Run (Args ("--config", "/tmp/no-such-quality-manager-config.toml", "maintenance"), 1));
+      Output := To_Unbounded_String
+        (Run (Args ("--config", "/tmp/no-such-quality-manager-config.toml", "daemon", "--once"), 1));
+      Output := To_Unbounded_String
+        (Run (Args ("--config", "/tmp/no-such-quality-manager-config.toml", "campaign-start", "missing"), 1));
+      Output := To_Unbounded_String
+        (Run (Args ("--config", "/tmp/no-such-quality-manager-config.toml", "approve", Approval_Path), 1));
+      Write_File
+        (Config_Path,
+         "[coordinator]" & ASCII.LF & "database = """ & Database_Path & """" & ASCII.LF &
+         "[integrations]" & ASCII.LF & "model_runner = ""/bin/false""" & ASCII.LF);
+      Output := To_Unbounded_String (Run (Args ("--config", Config_Path, "doctor"), 1));
+      Write_File
+        (Config_Path,
+         "[coordinator]" & ASCII.LF &
+         "database = ""/tmp/no-such-quality-manager-status.db""" & ASCII.LF);
+      Output := To_Unbounded_String (Run (Args ("--config", Config_Path, "status"), 1));
       Output := To_Unbounded_String (Run (Args ("unknown-command"), 1));
       Cleanup;
    exception
@@ -762,6 +800,9 @@ package body Quality_Manager_Test_Suite is
         ("{""schema_version"":2}", 1, Result);
       Assert (Result.Kind = Quality_Manager.Results.Incompatible_Contract, "unknown schema rejected");
 
+      Quality_Manager.Schemas.Validate_Versioned_JSON ("[]", 1, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Incompatible_Contract, "non-object JSON root rejected");
+
       Quality_Manager.Schemas.Validate_Versioned_JSON
         ("{""schema_version"":1,""schema_version"":1}", 1, Result);
       Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "duplicate JSON member rejected");
@@ -777,6 +818,19 @@ package body Quality_Manager_Test_Suite is
       Assert
         (Result.Kind = Quality_Manager.Results.Incompatible_Contract,
          "mismatched document kind rejected");
+
+      declare
+         Long_Text : constant String (1 .. Quality_Manager.Results.Maximum_Diagnostic_Length + 1) :=
+           [others => 'x'];
+         Bounded : constant Quality_Manager.Results.Operation_Result :=
+           Quality_Manager.Results.Make_Result
+             (Quality_Manager.Results.Execution_Error, Long_Text, Long_Text);
+      begin
+         Assert
+           (Quality_Manager.Results.Message (Bounded)'Length =
+              Quality_Manager.Results.Maximum_Diagnostic_Length,
+            "result diagnostics are bounded deterministically");
+      end;
    end Test_JSON_Contract;
 
    procedure Test_Doctor_Output (Item : in out Fixture) is
@@ -960,8 +1014,12 @@ package body Quality_Manager_Test_Suite is
          Assert (Schema_Check.Schema_Version = 1, "logical schema version is explicit");
       end;
       Assert (Quality_Manager.Storage.Migrations.Can_Migrate (0, 1), "initial schema migration is registered");
+      Validation := Quality_Manager.Storage.Migrations.Validate_Current (1);
+      Assert (Validation.Kind = Quality_Manager.Results.Success, "current schema is accepted");
       Validation := Quality_Manager.Storage.Migrations.Validate_Current (2);
       Assert (Validation.Kind = Quality_Manager.Results.Incompatible_Contract, "newer schema is rejected");
+      Validation := Quality_Manager.Storage.Migrations.Validate_Current (0);
+      Assert (Validation.Kind = Quality_Manager.Results.Not_Ready, "older schema requires a migration");
    end Test_Transitions_And_Journal;
 
    procedure Test_Persistent_Storage (Item : in out Fixture) is
@@ -1156,6 +1214,22 @@ package body Quality_Manager_Test_Suite is
          Assert
            (Result.Kind = Quality_Manager.Results.Integrity_Error,
             "second active dispatch for logical remediation is rejected");
+         Dispatch.Active := False;
+         Quality_Manager.Storage.Records.Save (Store, Dispatch, Result);
+         Assert (Result.Kind = Quality_Manager.Results.Success, "inactive dispatch history is retained");
+         declare
+            Invalid_Attempt : constant Quality_Manager.Storage.Schema.Attempt :=
+              (Attempt => 0,
+               Dispatch_Id => Dispatch.Dispatch_Id,
+               Execution_Identity => To_Unbounded_String ("execution:invalid"),
+               Started_At => 0,
+               Finished_At => 0,
+               Timeout_Seconds => 1,
+               Outcome => Quality_Manager.Model.No_Outcome);
+         begin
+            Quality_Manager.Storage.Records.Save (Store, Invalid_Attempt, Result);
+            Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "zero attempt identity is rejected");
+         end;
       end;
 
       Quality_Manager.Storage.Put (Store, Work, Result);
@@ -1800,13 +1874,14 @@ package body Quality_Manager_Test_Suite is
       procedure Run
         (Exit_Code : String; JSON : String;
          Contract : Quality_Manager.Integrations.JSON_CLI.Exit_Contract;
-         Version : Positive := 1) is
+         Version : Positive := 1;
+         Limit : Positive := 4_096) is
       begin
          Args.Clear;
          Args.Append (To_Unbounded_String (Exit_Code));
          Args.Append (To_Unbounded_String (JSON));
          Quality_Manager.Integrations.JSON_CLI.Execute
-           ("./bin/qm_adapter_fixture", Args, "", Env, Contract, Version, 10, 4_096, Response);
+           ("./bin/qm_adapter_fixture", Args, "", Env, Contract, Version, 10, Limit, Response);
       end Run;
    begin
       Run ("0", "{""schema_version"":1}", Quality_Manager.Integrations.JSON_CLI.Ada_Quality_Contract);
@@ -1825,6 +1900,10 @@ package body Quality_Manager_Test_Suite is
       Assert (Response.Status.Kind = Quality_Manager.Results.Interrupted, "Improve interruption normalized");
       Run ("0", "invalid-utf8", Quality_Manager.Integrations.JSON_CLI.Ada_Quality_Contract);
       Assert (Response.Status.Kind = Quality_Manager.Results.Incompatible_Contract, "invalid UTF-8 rejected");
+      Run
+        ("0", "{""schema_version"":1,""padding"":""0123456789""}",
+         Quality_Manager.Integrations.JSON_CLI.Ada_Quality_Contract, Limit => 8);
+      Assert (Response.Status.Kind = Quality_Manager.Results.Execution_Error, "bounded JSON output is enforced");
 
       declare
          Adapter : Quality_Manager.Integrations.Improve.Adapter;
