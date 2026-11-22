@@ -262,7 +262,7 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
 | P11-06 real maintenance scenario | complete | assessments 19–24 cover all six projects; each cycle has a terminal coordination event |
 | P11-07 real campaign scenario | complete | `phase11-structure-20261122` advanced STR-01 from baseline 19 to passing assessment 25 |
-| P11-08 real release scenario | blocked | Quality Manager assessment 28 found nine nonpassing indicators; no evidence bundle was issued |
+| P11-08 real release scenario | blocked | assessment 29 passes the native checker but cannot resolve unpublished sibling crates in isolation |
 | P11-09 crash/concurrency stress | complete | abrupt termination recovery, ownership contention, stale fencing, and 128 lease cycles pass |
 | P11-10 packaging/docs/CI | implemented | source-only manifest passes; pinned Linux CI validates and creates a source archive |
 
@@ -377,6 +377,11 @@ assessment 25 supplied current evidence, and Summary reconciliation advanced the
 exact release candidate produced assessment 26 and was correctly blocked. Quality Manager candidates then produced
 assessments 27 and 28. The latter passed exact commit, build, reproducibility, tests, and applicable proof checks, but
 still had nine nonpassing quality indicators, so qualification issued no bundle.
+
+Assessment 29 confirmed the native Ada release checker, audited exception boundaries, and canonical release manifest.
+The isolated Alire build remains blocked because `config` and `representation` have no remote repository and the
+required `hostkit` revision is not published. Local development pins remain necessary until exact remote releases are
+available; the unpinned `alire.release.toml` records the intended source-only dependency contract.
 
 Coordinator ownership now uses an expiry-aware durable lease with fencing generations and renewal before external
 work. The suite kills a helper process without finalization, reopens its database, reconstructs the prepared journal

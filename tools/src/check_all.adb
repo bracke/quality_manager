@@ -100,12 +100,13 @@ procedure Check_All is
    end Check_Coverage;
 
    Manifest : constant String :=
-     (if Root = "" then "" else Read_File (Root & "/alire.toml"));
+     (if Root = "" then "" else Read_File (Root & "/alire.release.toml"));
 begin
    if Root = "" then
       Fail ("check_all must run from the Quality Manager root or tools directory");
    end if;
    Require_File ("alire.toml");
+   Require_File ("alire.release.toml");
    Require_File ("quality_manager.gpr");
    Require_File ("README.md");
    Require_File ("LICENSE");
@@ -116,7 +117,7 @@ begin
    Require_File ("docs/release-checklist.md");
    Require_File ("coverage/gcov-summary.txt");
    if Ada.Strings.Fixed.Index (Manifest, "[[pins]]") > 0 then
-      Fail ("release manifest contains local path pins");
+      Fail ("canonical release manifest contains local path pins");
    end if;
    if Root /= "" and then Ada.Directories.Exists (Root & "/coverage/gcov-summary.txt") then
       Check_Coverage;

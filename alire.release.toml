@@ -1,0 +1,28 @@
+name = "quality_manager"
+description = "Durable autonomous quality coordination for Ada projects"
+version = "0.1.0-dev"
+licenses = "MIT"
+authors = ["Bent Bracke"]
+maintainers = ["Bent Bracke <bent@bracke.dk>"]
+maintainers-logins = ["bracke"]
+tags = ["quality", "automation", "ada", "coordination"]
+project-files = ["quality_manager.gpr"]
+executables = ["quality-manager"]
+
+[[depends-on]]
+gnat_native = "=15.2.1"
+
+[[depends-on]]
+config = "*"
+
+[[depends-on]]
+jsonlib = "*"
+
+[[depends-on]]
+database = "*"
+
+[[depends-on]]
+hostkit = "*"
+
+[build-profiles]
+"*" = "development"

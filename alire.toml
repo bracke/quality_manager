@@ -24,6 +24,24 @@ database = "*"
 [[depends-on]]
 hostkit = "*"
 
+[[pins]]
+config = { path = "../config" }
+
+[[pins]]
+jsonlib = { path = "../jsonlib" }
+
+[[pins]]
+database = { path = "../database" }
+
+[[pins]]
+hostkit = { path = "../hostkit" }
+
+[[pins]]
+representation = { path = "../representation" }
+
+[[pins]]
+cryptolib = { path = "../cryptolib" }
+
 [[actions]]
 type = "test"
 command = ["sh", "-c", "cd tests && alr -n build && ./bin/quality_manager_tests"]

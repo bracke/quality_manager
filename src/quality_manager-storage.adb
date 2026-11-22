@@ -252,7 +252,7 @@ package body Quality_Manager.Storage is
                Ada.Directories.Create_Path (Parent);
             end if;
          exception
-            when Error : others =>
+            when Error : others =>  --  AQ: audited exception boundary
                Result := Make_Result
                  (Execution_Error,
                   "create coordinator database directory: " & Ada.Exceptions.Exception_Message (Error),
