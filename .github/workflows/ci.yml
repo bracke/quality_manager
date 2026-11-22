@@ -54,6 +54,14 @@ jobs:
           QUALITY_MANAGER_WARNINGS_AS_ERRORS: "true"
         run: alr test
 
+      - name: Applicable SPARK proof
+        working-directory: quality_manager
+        run: alr exec -- gnatprove
+
+      - name: Generate API documentation
+        working-directory: quality_manager
+        run: alr exec -- gnatdoc -P quality_manager.gpr
+
       - name: Verify source-only manifest
         working-directory: quality_manager
         run: >-

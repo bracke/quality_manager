@@ -40,6 +40,11 @@ project Quality_Manager is
       for Executable ("main.adb") use "quality-manager";
    end Builder;
 
+   package Prove is
+      for Proof_Switches ("Ada") use
+        ("--level=2", "-u", "quality_manager-journal.adb");
+   end Prove;
+
    package Linker is
       case Coverage is
          when "false" => null;
