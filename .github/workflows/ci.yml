@@ -38,6 +38,12 @@ jobs:
       - name: Select complete dependency solution
         run: alr settings --global --set solver.timeout 600
 
+      - name: Install proof and documentation tools
+        run: |
+          alr --non-interactive install gnatprove=15.1.0
+          alr --non-interactive install gnatdoc=25.2.0
+          echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
+
       - name: Show selected compiler
         working-directory: quality_manager
         run: alr exec -- gnatls --version
