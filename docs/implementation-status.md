@@ -264,7 +264,7 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | P11-07 real campaign scenario | complete | `phase11-structure-20261122` advanced STR-01 from baseline 19 to passing assessment 25 |
 | P11-08 real release scenario | complete | candidate `f6bc7928...` qualified with assessment 36 and exported canonical evidence |
 | P11-09 crash/concurrency stress | complete | abrupt termination recovery, ownership contention, stale fencing, and 128 lease cycles pass |
-| P11-10 packaging/docs/CI | implemented | source-only manifest passes; pinned Linux CI validates and creates a source archive |
+| P11-10 packaging/docs/CI | complete | GitHub Actions run 45126406883 passed and uploaded the source archive |
 
 The stabilization work fixes explicit configuration propagation for maintenance, campaigns, and release export,
 uses the recovery state machine in operational reporting, and tests release evidence corruption, process failures,
