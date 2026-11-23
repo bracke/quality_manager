@@ -168,6 +168,48 @@ package body Quality_Manager.Storage.Decoding is
       Root     : Jsonlib.Documents.Node;
       Origin   : Unbounded_String;
       Outcome  : Unbounded_String;
+
+      procedure Read_String
+        (Name     : String;
+         Field    : out Unbounded_String;
+         Complete : in out Boolean) is
+      begin
+         if not String_Field (Document, Root, Name, Field) then
+            Complete := False;
+         end if;
+      end Read_String;
+
+      procedure Read_Natural
+        (Name     : String;
+         Field    : out Natural;
+         Complete : in out Boolean) is
+      begin
+         if not Natural_Field (Document, Root, Name, Field) then
+            Complete := False;
+         end if;
+      end Read_Natural;
+
+      procedure Read_Fields (Complete : out Boolean) is
+      begin
+         Complete := Project_Field (Document, Root, Value.Project);
+         Read_String ("global_remediation", Value.Global_Remediation, Complete);
+         if Length (Value.Global_Remediation) = 0 then
+            Complete := False;
+         end if;
+         Read_String ("origin", Origin, Complete);
+         Read_String ("findings", Value.Finding_Identities, Complete);
+         Read_Natural ("priority", Value.Priority, Complete);
+         Read_Natural ("baseline_assessment_run", Value.Baseline_Assessment_Run, Complete);
+         Read_String ("plan_id", Value.Improve_Plan_Id, Complete);
+         Read_Natural ("plan_revision", Value.Improve_Revision, Complete);
+         Read_String ("task_id", Value.Improve_Task_Id, Complete);
+         Read_String ("content_sha256", Value.Improve_Content_SHA256, Complete);
+         Read_String ("planned_source_fingerprint", Value.Planned_Source_Fingerprint, Complete);
+         Read_String ("policy_digest", Value.Effective_Policy_Digest, Complete);
+         Read_String ("outcome", Outcome, Complete);
+      end Read_Fields;
+
+      Complete : Boolean;
    begin
       Value := Empty_Work;
       Quality_Manager.Storage.Read (Item, Work_Id, Stored, Result);
@@ -184,23 +226,8 @@ package body Quality_Manager.Storage.Decoding is
       end if;
       Root := Document.Root;
       Value.Work_Id := Stored.Entity_Key;
-      if not String_Field (Document, Root, "global_remediation", Value.Global_Remediation)
-        or else Length (Value.Global_Remediation) = 0
-        or else not Project_Field (Document, Root, Value.Project)
-        or else not String_Field (Document, Root, "origin", Origin)
-        or else not String_Field (Document, Root, "findings", Value.Finding_Identities)
-        or else not Natural_Field (Document, Root, "priority", Value.Priority)
-        or else not Natural_Field
-          (Document, Root, "baseline_assessment_run", Value.Baseline_Assessment_Run)
-        or else not String_Field (Document, Root, "plan_id", Value.Improve_Plan_Id)
-        or else not Natural_Field (Document, Root, "plan_revision", Value.Improve_Revision)
-        or else not String_Field (Document, Root, "task_id", Value.Improve_Task_Id)
-        or else not String_Field (Document, Root, "content_sha256", Value.Improve_Content_SHA256)
-        or else not String_Field
-          (Document, Root, "planned_source_fingerprint", Value.Planned_Source_Fingerprint)
-        or else not String_Field (Document, Root, "policy_digest", Value.Effective_Policy_Digest)
-        or else not String_Field (Document, Root, "outcome", Outcome)
-      then
+      Read_Fields (Complete);
+      if not Complete then
          Result := Make_Result
            (Integrity_Error, "persisted work record is incomplete", "qm.storage.work-fields");
          return;
@@ -229,6 +256,40 @@ package body Quality_Manager.Storage.Decoding is
       Document : Jsonlib.Documents.Document;
       Root     : Jsonlib.Documents.Node;
       Revision : Natural;
+
+      procedure Read_String
+        (Name     : String;
+         Field    : out Unbounded_String;
+         Complete : in out Boolean) is
+      begin
+         if not String_Field (Document, Root, Name, Field) then
+            Complete := False;
+         end if;
+      end Read_String;
+
+      procedure Read_Fields (Complete : out Boolean) is
+      begin
+         Complete := True;
+         Read_String ("dispatch_id", Value.Dispatch_Id, Complete);
+         if Length (Value.Dispatch_Id) = 0 then
+            Complete := False;
+         end if;
+         Read_String ("work_id", Value.Work_Id, Complete);
+         Read_String ("plan_id", Value.Improve_Task.Plan_Id, Complete);
+         if not Natural_Field (Document, Root, "plan_revision", Revision) then
+            Complete := False;
+         elsif Revision = 0 then
+            Complete := False;
+         end if;
+         Read_String ("improve_task_id", Value.Improve_Task.Task_Id, Complete);
+         Read_String ("native_task_id", Value.Native_Task_Id, Complete);
+         if Length (Value.Native_Task_Id) = 0 then
+            Complete := False;
+         end if;
+         Read_String ("authorization_id", Value.Authorization_Id, Complete);
+      end Read_Fields;
+
+      Complete : Boolean;
    begin
       Value := Empty_Dispatch;
       Quality_Manager.Storage.Read
@@ -247,17 +308,8 @@ package body Quality_Manager.Storage.Decoding is
       Root := Document.Root;
       Value.Logical_Remediation := To_Unbounded_String (Logical_Remediation);
       Value.Active := True;
-      if not String_Field (Document, Root, "dispatch_id", Value.Dispatch_Id)
-        or else Length (Value.Dispatch_Id) = 0
-        or else not String_Field (Document, Root, "work_id", Value.Work_Id)
-        or else not String_Field (Document, Root, "plan_id", Value.Improve_Task.Plan_Id)
-        or else not Natural_Field (Document, Root, "plan_revision", Revision)
-        or else Revision = 0
-        or else not String_Field (Document, Root, "improve_task_id", Value.Improve_Task.Task_Id)
-        or else not String_Field (Document, Root, "native_task_id", Value.Native_Task_Id)
-        or else Length (Value.Native_Task_Id) = 0
-        or else not String_Field (Document, Root, "authorization_id", Value.Authorization_Id)
-      then
+      Read_Fields (Complete);
+      if not Complete then
          Result := Make_Result
            (Integrity_Error, "persisted active dispatch is incomplete", "qm.storage.dispatch-fields");
          return;
@@ -285,12 +337,52 @@ package body Quality_Manager.Storage.Decoding is
       Root     : Jsonlib.Documents.Node;
       Revision : Natural;
       Key      : constant String := To_String (Stored.Entity_Key);
+
+      procedure Read_String
+        (Name     : String;
+         Field    : out Unbounded_String;
+         Complete : in out Boolean) is
+      begin
+         if not String_Field (Document, Root, Name, Field) then
+            Complete := False;
+         elsif Length (Field) = 0 then
+            Complete := False;
+         end if;
+      end Read_String;
+
+      procedure Read_Fields (Complete : out Boolean) is
+      begin
+         Complete := Project_Field (Document, Root, Value.Project);
+         Read_String ("plan_id", Value.Plan_Id, Complete);
+         if not Natural_Field (Document, Root, "plan_revision", Revision) then
+            Complete := False;
+         elsif Revision = 0 then
+            Complete := False;
+         end if;
+         Read_String ("content_digest", Value.Content_Digest, Complete);
+         Read_String ("action", Value.Authorized_Action, Complete);
+         Read_String ("policy_digest", Value.Policy_Digest, Complete);
+         Read_String ("approver", Value.Approver, Complete);
+         if not Sequence_Field (Document, Root, "created_at", Value.Created_At) then
+            Complete := False;
+         end if;
+         if not Sequence_Field (Document, Root, "expires_at", Value.Expires_At) then
+            Complete := False;
+         end if;
+      end Read_Fields;
+
+      Complete : Boolean;
    begin
       Value := Empty_Approval;
-      if Stored.Kind /= Approval_Record
-        or else Key'Length <= Prefix'Length
-        or else Key (Key'First .. Key'First + Prefix'Length - 1) /= Prefix
-      then
+      if Stored.Kind /= Approval_Record then
+         Result := Make_Result
+           (Integrity_Error, "approval record identity is inconsistent", "qm.storage.approval-kind");
+         return;
+      elsif Key'Length <= Prefix'Length then
+         Result := Make_Result
+           (Integrity_Error, "approval record identity is inconsistent", "qm.storage.approval-kind");
+         return;
+      elsif Key (Key'First .. Key'First + Prefix'Length - 1) /= Prefix then
          Result := Make_Result
            (Integrity_Error, "approval record identity is inconsistent", "qm.storage.approval-kind");
          return;
@@ -301,22 +393,8 @@ package body Quality_Manager.Storage.Decoding is
       end if;
       Root := Document.Root;
       Value.Approval_Id := To_Unbounded_String (Key (Key'First + Prefix'Length .. Key'Last));
-      if not Project_Field (Document, Root, Value.Project)
-        or else not String_Field (Document, Root, "plan_id", Value.Plan_Id)
-        or else Length (Value.Plan_Id) = 0
-        or else not Natural_Field (Document, Root, "plan_revision", Revision)
-        or else Revision = 0
-        or else not String_Field (Document, Root, "content_digest", Value.Content_Digest)
-        or else Length (Value.Content_Digest) = 0
-        or else not String_Field (Document, Root, "action", Value.Authorized_Action)
-        or else Length (Value.Authorized_Action) = 0
-        or else not String_Field (Document, Root, "policy_digest", Value.Policy_Digest)
-        or else Length (Value.Policy_Digest) = 0
-        or else not String_Field (Document, Root, "approver", Value.Approver)
-        or else Length (Value.Approver) = 0
-        or else not Sequence_Field (Document, Root, "created_at", Value.Created_At)
-        or else not Sequence_Field (Document, Root, "expires_at", Value.Expires_At)
-      then
+      Read_Fields (Complete);
+      if not Complete then
          Result := Make_Result
            (Integrity_Error, "persisted approval is incomplete", "qm.storage.approval-fields");
          return;
@@ -344,6 +422,31 @@ package body Quality_Manager.Storage.Decoding is
       Decoded : Quality_Manager.Storage.Schema.Approval;
       Found   : Boolean := False;
       Expired : Boolean := False;
+
+      function Matches_Work
+        (Approval : Quality_Manager.Storage.Schema.Approval) return Boolean is
+      begin
+         if not Quality_Manager.Identities.Equal (Approval.Project, Work.Project) then
+            return False;
+         elsif Approval.Plan_Id /= Work.Improve_Plan_Id then
+            return False;
+         elsif Natural (Approval.Plan_Revision) /= Work.Improve_Revision then
+            return False;
+         elsif Approval.Content_Digest /= Work.Improve_Content_SHA256 then
+            return False;
+         elsif To_String (Approval.Authorized_Action) /= "publish" then
+            return False;
+         else
+            return Approval.Policy_Digest = Work.Effective_Policy_Digest;
+         end if;
+      end Matches_Work;
+
+      function Is_Expired
+        (Approval : Quality_Manager.Storage.Schema.Approval) return Boolean is
+      begin
+         return Approval.Created_At > Now
+           or else (Approval.Expires_At > 0 and then Now > Approval.Expires_At);
+      end Is_Expired;
    begin
       Value := Empty_Approval;
       Quality_Manager.Storage.List
@@ -356,16 +459,8 @@ package body Quality_Manager.Storage.Decoding is
          if Result.Kind /= Success then
             return;
          end if;
-         if Quality_Manager.Identities.Equal (Decoded.Project, Work.Project)
-           and then Decoded.Plan_Id = Work.Improve_Plan_Id
-           and then Natural (Decoded.Plan_Revision) = Work.Improve_Revision
-           and then Decoded.Content_Digest = Work.Improve_Content_SHA256
-           and then To_String (Decoded.Authorized_Action) = "publish"
-           and then Decoded.Policy_Digest = Work.Effective_Policy_Digest
-         then
-            if Decoded.Created_At > Now
-              or else (Decoded.Expires_At > 0 and then Now > Decoded.Expires_At)
-            then
+         if Matches_Work (Decoded) then
+            if Is_Expired (Decoded) then
                Expired := True;
             elsif not Found
               or else To_String (Decoded.Approval_Id) < To_String (Value.Approval_Id)

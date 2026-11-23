@@ -21,6 +21,7 @@ with Quality_Manager.Results;
 with Quality_Manager.Storage;
 
 procedure Main is
+   --  Run the Quality Manager command-line application.
    use type Quality_Manager.CLI.Command_Kind;
    use type Quality_Manager.Results.Result_Kind;
 
@@ -95,6 +96,180 @@ procedure Main is
          end if;
       end if;
    end Run_Campaign_Command;
+   procedure Run_Doctor is
+      Runner   : Quality_Manager.Integrations.Runner.Adapter;
+      Response : Quality_Manager.Integrations.JSON_CLI.Response;
+   begin
+      Quality_Manager.Config.Load
+        (To_String (Options.Config_Path), Options.Config_Explicit, Settings, Result);
+      if Result.Kind /= Quality_Manager.Results.Success then
+         Report_Failure;
+         return;
+      end if;
+      Quality_Manager.Integrations.Runner.Initialize
+        (Runner, To_String (Settings.Model_Runner_Executable));
+      Quality_Manager.Integrations.Runner.Capabilities (Runner, Response);
+      Ada.Text_IO.Put_Line
+        (Quality_Manager.Reporting.Doctor (Settings, Options.Format, Response.Status));
+      if Response.Status.Kind /= Quality_Manager.Results.Success then
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+      end if;
+   end Run_Doctor;
+
+   procedure Run_Maintenance is
+   begin
+      Quality_Manager.Maintenance.Run_Configured_Cycle
+        (To_String (Options.Project_Selector), Options.Dry_Run,
+         To_String (Options.Config_Path), Options.Config_Explicit);
+   exception
+      when Error : Quality_Manager.Maintenance.Maintenance_Error =>
+         Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Ada.Exceptions.Exception_Message (Error));
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+   end Run_Maintenance;
+
+   procedure Run_Daemon is
+   begin
+      loop
+         begin
+            Quality_Manager.Maintenance.Run_Configured_Cycle
+              (To_String (Options.Project_Selector), Options.Dry_Run,
+               To_String (Options.Config_Path), Options.Config_Explicit);
+         exception
+            when Error : Quality_Manager.Maintenance.Maintenance_Error =>
+               Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Ada.Exceptions.Exception_Message (Error));
+               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+               exit;
+         end;
+         exit when Options.Once;
+         delay 60.0;
+      end loop;
+   end Run_Daemon;
+
+   procedure Run_Operational_View is
+      Store        : Quality_Manager.Storage.Store;
+      Close_Result : Quality_Manager.Results.Operation_Result;
+      Output       : Unbounded_String;
+   begin
+      Quality_Manager.Config.Load
+        (To_String (Options.Config_Path), Options.Config_Explicit, Settings, Result);
+      if Result.Kind = Quality_Manager.Results.Success then
+         Quality_Manager.Storage.Open
+           (Store, To_String (Settings.Coordinator_Database), False, Result);
+      end if;
+      if Result.Kind = Quality_Manager.Results.Success then
+         Output := To_Unbounded_String
+           (Quality_Manager.Reporting.Operational
+              (Store, View_For (Options.Command), Options.Format, Result));
+      end if;
+      if Quality_Manager.Storage.Is_Open (Store) then
+         Quality_Manager.Storage.Close (Store, Close_Result);
+         if Result.Kind = Quality_Manager.Results.Success
+           and then Close_Result.Kind /= Quality_Manager.Results.Success
+         then
+            Result := Close_Result;
+         end if;
+      end if;
+      if Result.Kind = Quality_Manager.Results.Success then
+         Ada.Text_IO.Put_Line (To_String (Output));
+      else
+         Report_Failure;
+      end if;
+   end Run_Operational_View;
+
+   procedure Run_Reconcile_Assessment is
+      Store        : Quality_Manager.Storage.Store;
+      Quality      : Quality_Manager.Integrations.Quality.Adapter;
+      Close_Result : Quality_Manager.Results.Operation_Result;
+   begin
+      Quality_Manager.Config.Load
+        (To_String (Options.Config_Path), Options.Config_Explicit, Settings, Result);
+      if Result.Kind = Quality_Manager.Results.Success then
+         Quality_Manager.Storage.Open
+           (Store, To_String (Settings.Coordinator_Database), True, Result);
+      end if;
+      if Result.Kind = Quality_Manager.Results.Success then
+         Quality_Manager.Integrations.Quality.Initialize
+           (Quality, To_String (Settings.Ada_Quality_Executable),
+            To_String (Settings.Quality_Database),
+            Policy_Path => To_String (Settings.Quality_Policy));
+         begin
+            Quality_Manager.Recovery.Reconcile_Assessment
+              (Store, Quality,
+               Quality_Manager.Identities.Operation_Id'Value (To_String (Options.Primary_Value)),
+               Positive'Value (To_String (Options.Secondary_Value)), Result);
+         exception
+            when Constraint_Error =>
+               Result := Quality_Manager.Results.Make_Result
+                 (Quality_Manager.Results.Invalid_Request,
+                  "operation and run must be positive integers",
+                  "qm.cli.reconcile-assessment");
+         end;
+      end if;
+      if Quality_Manager.Storage.Is_Open (Store) then
+         Quality_Manager.Storage.Close (Store, Close_Result);
+         if Result.Kind = Quality_Manager.Results.Success
+           and then Close_Result.Kind /= Quality_Manager.Results.Success
+         then
+            Result := Close_Result;
+         end if;
+      end if;
+      if Result.Kind /= Quality_Manager.Results.Success then
+         Report_Failure;
+      end if;
+   end Run_Reconcile_Assessment;
+
+   procedure Run_Release_Command is
+   begin
+      case Options.Command is
+         when Quality_Manager.CLI.Release_Create_Command =>
+            Quality_Manager.Releases.Create_Configured
+              (To_String (Options.Primary_Value), To_String (Options.Secondary_Value),
+               To_String (Options.Config_Path), Options.Config_Explicit);
+         when Quality_Manager.CLI.Release_Qualify_Command =>
+            Quality_Manager.Releases.Qualify_Configured
+              (To_String (Options.Primary_Value),
+               To_String (Options.Config_Path), Options.Config_Explicit);
+         when Quality_Manager.CLI.Release_Export_Command =>
+            Quality_Manager.Releases.Export_Evidence_Configured
+              (To_String (Options.Primary_Value), To_String (Options.Secondary_Value),
+               To_String (Options.Config_Path), Options.Config_Explicit);
+         when others =>
+            null;
+      end case;
+   exception
+      when Error : Quality_Manager.Releases.Release_Error =>
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error, Ada.Exceptions.Exception_Message (Error));
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+   end Run_Release_Command;
+
+   procedure Run_Approval_Command is
+      Store        : Quality_Manager.Storage.Store;
+      Close_Result : Quality_Manager.Results.Operation_Result;
+   begin
+      Quality_Manager.Config.Load
+        (To_String (Options.Config_Path), Options.Config_Explicit, Settings, Result);
+      if Result.Kind = Quality_Manager.Results.Success then
+         Quality_Manager.Storage.Open
+           (Store, To_String (Settings.Coordinator_Database), True, Result);
+      end if;
+      if Result.Kind = Quality_Manager.Results.Success then
+         Quality_Manager.Approvals.Apply_Decision
+           (Store, To_String (Options.Primary_Value),
+            Options.Command = Quality_Manager.CLI.Approve_Command, Result);
+      end if;
+      if Quality_Manager.Storage.Is_Open (Store) then
+         Quality_Manager.Storage.Close (Store, Close_Result);
+         if Result.Kind = Quality_Manager.Results.Success
+           and then Close_Result.Kind /= Quality_Manager.Results.Success
+         then
+            Result := Close_Result;
+         end if;
+      end if;
+      if Result.Kind /= Quality_Manager.Results.Success then
+         Report_Failure;
+      end if;
+   end Run_Approval_Command;
 begin
    for Index in 1 .. Ada.Command_Line.Argument_Count loop
       Arguments.Append (Ada.Command_Line.Argument (Index));
@@ -114,132 +289,20 @@ begin
       when Quality_Manager.CLI.Version_Command =>
          Ada.Text_IO.Put_Line (Quality_Manager.Application_Name & " " & Quality_Manager.Version);
       when Quality_Manager.CLI.Doctor_Command =>
-         Quality_Manager.Config.Load
-           (To_String (Options.Config_Path), Options.Config_Explicit, Settings, Result);
-         if Result.Kind /= Quality_Manager.Results.Success then
-            Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Quality_Manager.Results.Message (Result));
-            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-            return;
-         end if;
-         declare
-            Runner   : Quality_Manager.Integrations.Runner.Adapter;
-            Response : Quality_Manager.Integrations.JSON_CLI.Response;
-         begin
-            Quality_Manager.Integrations.Runner.Initialize
-              (Runner, To_String (Settings.Model_Runner_Executable));
-            Quality_Manager.Integrations.Runner.Capabilities (Runner, Response);
-            Ada.Text_IO.Put_Line
-              (Quality_Manager.Reporting.Doctor (Settings, Options.Format, Response.Status));
-            if Response.Status.Kind /= Quality_Manager.Results.Success then
-               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-            end if;
-         end;
+         Run_Doctor;
       when Quality_Manager.CLI.Maintenance_Command =>
-         begin
-            Quality_Manager.Maintenance.Run_Configured_Cycle
-              (To_String (Options.Project_Selector), Options.Dry_Run,
-               To_String (Options.Config_Path), Options.Config_Explicit);
-         exception
-            when Error : Quality_Manager.Maintenance.Maintenance_Error =>
-               Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Ada.Exceptions.Exception_Message (Error));
-               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-         end;
+         Run_Maintenance;
       when Quality_Manager.CLI.Daemon_Command =>
-         loop
-            begin
-               Quality_Manager.Maintenance.Run_Configured_Cycle
-                 (To_String (Options.Project_Selector), Options.Dry_Run,
-                  To_String (Options.Config_Path), Options.Config_Explicit);
-            exception
-               when Error : Quality_Manager.Maintenance.Maintenance_Error =>
-                  Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, Ada.Exceptions.Exception_Message (Error));
-                  Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-                  exit;
-            end;
-            exit when Options.Once;
-            delay 60.0;
-         end loop;
+         Run_Daemon;
       when Quality_Manager.CLI.Status_Command
          | Quality_Manager.CLI.Queue_Command
          | Quality_Manager.CLI.Approvals_Command
          | Quality_Manager.CLI.History_Command
          | Quality_Manager.CLI.Events_Command
          | Quality_Manager.CLI.Recover_Command =>
-         Quality_Manager.Config.Load
-           (To_String (Options.Config_Path), Options.Config_Explicit, Settings, Result);
-         if Result.Kind /= Quality_Manager.Results.Success then
-            Report_Failure;
-            return;
-         end if;
-         declare
-            Store        : Quality_Manager.Storage.Store;
-            Close_Result : Quality_Manager.Results.Operation_Result;
-            Output       : Unbounded_String;
-         begin
-            Quality_Manager.Storage.Open
-              (Store, To_String (Settings.Coordinator_Database), False, Result);
-            if Result.Kind = Quality_Manager.Results.Success then
-               Output := To_Unbounded_String
-                 (Quality_Manager.Reporting.Operational
-                    (Store, View_For (Options.Command), Options.Format, Result));
-            end if;
-            if Quality_Manager.Storage.Is_Open (Store) then
-               Quality_Manager.Storage.Close (Store, Close_Result);
-               if Result.Kind = Quality_Manager.Results.Success
-                 and then Close_Result.Kind /= Quality_Manager.Results.Success
-               then
-                  Result := Close_Result;
-               end if;
-            end if;
-            if Result.Kind = Quality_Manager.Results.Success then
-               Ada.Text_IO.Put_Line (To_String (Output));
-            else
-               Report_Failure;
-            end if;
-         end;
+         Run_Operational_View;
       when Quality_Manager.CLI.Reconcile_Assessment_Command =>
-         Quality_Manager.Config.Load
-           (To_String (Options.Config_Path), Options.Config_Explicit, Settings, Result);
-         if Result.Kind = Quality_Manager.Results.Success then
-            declare
-               Store        : Quality_Manager.Storage.Store;
-               Quality      : Quality_Manager.Integrations.Quality.Adapter;
-               Close_Result : Quality_Manager.Results.Operation_Result;
-            begin
-               Quality_Manager.Storage.Open
-                 (Store, To_String (Settings.Coordinator_Database), True, Result);
-               if Result.Kind = Quality_Manager.Results.Success then
-                  Quality_Manager.Integrations.Quality.Initialize
-                    (Quality, To_String (Settings.Ada_Quality_Executable),
-                     To_String (Settings.Quality_Database),
-                     Policy_Path => To_String (Settings.Quality_Policy));
-                  begin
-                     Quality_Manager.Recovery.Reconcile_Assessment
-                       (Store, Quality,
-                        Quality_Manager.Identities.Operation_Id'Value
-                          (To_String (Options.Primary_Value)),
-                        Positive'Value (To_String (Options.Secondary_Value)), Result);
-                  exception
-                     when Constraint_Error =>
-                        Result := Quality_Manager.Results.Make_Result
-                          (Quality_Manager.Results.Invalid_Request,
-                           "operation and run must be positive integers",
-                           "qm.cli.reconcile-assessment");
-                  end;
-               end if;
-               if Quality_Manager.Storage.Is_Open (Store) then
-                  Quality_Manager.Storage.Close (Store, Close_Result);
-                  if Result.Kind = Quality_Manager.Results.Success
-                    and then Close_Result.Kind /= Quality_Manager.Results.Success
-                  then
-                     Result := Close_Result;
-                  end if;
-               end if;
-            end;
-         end if;
-         if Result.Kind /= Quality_Manager.Results.Success then
-            Report_Failure;
-         end if;
+         Run_Reconcile_Assessment;
       when Quality_Manager.CLI.Campaign_Create_Command
          | Quality_Manager.CLI.Campaign_Start_Command
          | Quality_Manager.CLI.Campaign_Pause_Command
@@ -252,57 +315,8 @@ begin
       when Quality_Manager.CLI.Release_Create_Command
          | Quality_Manager.CLI.Release_Qualify_Command
          | Quality_Manager.CLI.Release_Export_Command =>
-         begin
-            case Options.Command is
-               when Quality_Manager.CLI.Release_Create_Command =>
-                  Quality_Manager.Releases.Create_Configured
-                    (To_String (Options.Primary_Value), To_String (Options.Secondary_Value),
-                     To_String (Options.Config_Path), Options.Config_Explicit);
-               when Quality_Manager.CLI.Release_Qualify_Command =>
-                  Quality_Manager.Releases.Qualify_Configured
-                    (To_String (Options.Primary_Value),
-                     To_String (Options.Config_Path), Options.Config_Explicit);
-               when Quality_Manager.CLI.Release_Export_Command =>
-                  Quality_Manager.Releases.Export_Evidence_Configured
-                    (To_String (Options.Primary_Value), To_String (Options.Secondary_Value),
-                     To_String (Options.Config_Path), Options.Config_Explicit);
-               when others => null;
-            end case;
-         exception
-            when Error : Quality_Manager.Releases.Release_Error =>
-               Ada.Text_IO.Put_Line
-                 (Ada.Text_IO.Standard_Error, Ada.Exceptions.Exception_Message (Error));
-               Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-         end;
+         Run_Release_Command;
       when Quality_Manager.CLI.Approve_Command | Quality_Manager.CLI.Reject_Command =>
-         Quality_Manager.Config.Load
-           (To_String (Options.Config_Path), Options.Config_Explicit, Settings, Result);
-         if Result.Kind /= Quality_Manager.Results.Success then
-            Report_Failure;
-            return;
-         end if;
-         declare
-            Store        : Quality_Manager.Storage.Store;
-            Close_Result : Quality_Manager.Results.Operation_Result;
-         begin
-            Quality_Manager.Storage.Open
-              (Store, To_String (Settings.Coordinator_Database), True, Result);
-            if Result.Kind = Quality_Manager.Results.Success then
-               Quality_Manager.Approvals.Apply_Decision
-                 (Store, To_String (Options.Primary_Value),
-                  Options.Command = Quality_Manager.CLI.Approve_Command, Result);
-            end if;
-            if Quality_Manager.Storage.Is_Open (Store) then
-               Quality_Manager.Storage.Close (Store, Close_Result);
-               if Result.Kind = Quality_Manager.Results.Success
-                 and then Close_Result.Kind /= Quality_Manager.Results.Success
-               then
-                  Result := Close_Result;
-               end if;
-            end if;
-            if Result.Kind /= Quality_Manager.Results.Success then
-               Report_Failure;
-            end if;
-         end;
+         Run_Approval_Command;
    end case;
 end Main;

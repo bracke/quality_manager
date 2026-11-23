@@ -4,6 +4,48 @@ with Quality_Manager.Results; use Quality_Manager.Results;
 package body Quality_Manager.CLI is
    Default_Config : constant String := "config/quality-manager.toml";
 
+   type Command_Entry is record
+      Name    : Unbounded_String;
+      Command : Command_Kind;
+   end record;
+
+   Command_Entries : constant array (Positive range <>) of Command_Entry :=
+     [(To_Unbounded_String ("help"), Help_Command),
+      (To_Unbounded_String ("version"), Version_Command),
+      (To_Unbounded_String ("doctor"), Doctor_Command),
+      (To_Unbounded_String ("maintenance"), Maintenance_Command),
+      (To_Unbounded_String ("daemon"), Daemon_Command),
+      (To_Unbounded_String ("status"), Status_Command),
+      (To_Unbounded_String ("queue"), Queue_Command),
+      (To_Unbounded_String ("approvals"), Approvals_Command),
+      (To_Unbounded_String ("history"), History_Command),
+      (To_Unbounded_String ("events"), Events_Command),
+      (To_Unbounded_String ("recover"), Recover_Command),
+      (To_Unbounded_String ("reconcile-assessment"), Reconcile_Assessment_Command),
+      (To_Unbounded_String ("campaign-create"), Campaign_Create_Command),
+      (To_Unbounded_String ("campaign-start"), Campaign_Start_Command),
+      (To_Unbounded_String ("campaign-pause"), Campaign_Pause_Command),
+      (To_Unbounded_String ("campaign-resume"), Campaign_Resume_Command),
+      (To_Unbounded_String ("campaign-reconcile"), Campaign_Reconcile_Command),
+      (To_Unbounded_String ("release-create"), Release_Create_Command),
+      (To_Unbounded_String ("release-qualify"), Release_Qualify_Command),
+      (To_Unbounded_String ("release-export"), Release_Export_Command),
+      (To_Unbounded_String ("approve"), Approve_Command),
+      (To_Unbounded_String ("reject"), Reject_Command)];
+
+   function Command_For
+     (Name : String; Command : out Command_Kind) return Boolean is
+   begin
+      for Candidate of Command_Entries loop
+         if Name = To_String (Candidate.Name) then
+            Command := Candidate.Command;
+            return True;
+         end if;
+      end loop;
+      Command := Help_Command;
+      return False;
+   end Command_For;
+
    function Usage return String is
      ("Usage: quality-manager [--config PATH] [--format terminal|json|markdown] COMMAND"
       & ASCII.LF & ASCII.LF
@@ -98,6 +140,128 @@ package body Quality_Manager.CLI is
             Seen_Config := True;
          end if;
       end Set_Config;
+
+      procedure Set_Project (Value : String) is
+      begin
+         if Seen_Project then
+            Fail ("--project may be supplied only once", "qm.cli.duplicate-option");
+         elsif Value'Length = 0 then
+            Fail ("--project requires a selector", "qm.cli.missing-value");
+         else
+            Item.Project_Selector := To_Unbounded_String (Value);
+            Seen_Project := True;
+         end if;
+      end Set_Project;
+
+      function Starts_With (Value, Prefix : String) return Boolean is
+      begin
+         return Value'Length >= Prefix'Length
+           and then Value (Value'First .. Value'First + Prefix'Length - 1) = Prefix;
+      end Starts_With;
+
+      procedure Process_Value_Option
+        (Argument : String;
+         Position : in out Positive) is
+      begin
+         if Argument = "--config" then
+            if Position = Arguments.Last_Index then
+               Fail ("--config requires a path", "qm.cli.missing-value");
+            else
+               Position := Position + 1;
+               Set_Config (Arguments (Position));
+            end if;
+         elsif Argument'Length > 9 and then Argument (Argument'First .. Argument'First + 8) = "--config=" then
+            Set_Config (Argument (Argument'First + 9 .. Argument'Last));
+         elsif Argument = "--format" then
+            if Position = Arguments.Last_Index then
+               Fail ("--format requires a value", "qm.cli.missing-value");
+            else
+               Position := Position + 1;
+               Set_Format (Arguments (Position));
+            end if;
+         elsif Argument'Length > 9 and then Argument (Argument'First .. Argument'First + 8) = "--format=" then
+            Set_Format (Argument (Argument'First + 9 .. Argument'Last));
+         elsif Argument = "--project" then
+            if Position = Arguments.Last_Index then
+               Fail ("--project requires a selector", "qm.cli.missing-value");
+            else
+               Position := Position + 1;
+               Set_Project (Arguments (Position));
+            end if;
+         else
+            Fail ("unknown argument: " & Argument, "qm.cli.unknown-argument");
+         end if;
+      end Process_Value_Option;
+
+      procedure Process_Flag_Option (Argument : String) is
+      begin
+         if Argument = "--dry-run" then
+            Item.Dry_Run := True;
+         elsif Argument = "--once" then
+            Item.Once := True;
+         elsif Argument = "--help" or else Argument = "-h" then
+            Set_Command (Help_Command);
+         elsif Argument = "--version" then
+            Set_Command (Version_Command);
+         else
+            Fail ("unknown argument: " & Argument, "qm.cli.unknown-argument");
+         end if;
+      end Process_Flag_Option;
+
+      procedure Process_Option
+        (Argument : String;
+         Position : in out Positive) is
+      begin
+         if Argument = "--config" or else Starts_With (Argument, "--config=") then
+            Process_Value_Option (Argument, Position);
+         elsif Argument = "--format" or else Starts_With (Argument, "--format=") then
+            Process_Value_Option (Argument, Position);
+         elsif Argument = "--project" then
+            Process_Value_Option (Argument, Position);
+         else
+            Process_Flag_Option (Argument);
+         end if;
+      end Process_Option;
+
+      procedure Process_Token
+        (Argument : String;
+         Position : in out Positive) is
+         Command : Command_Kind;
+      begin
+         if Argument'Length > 0 and then Argument (Argument'First) = '-' then
+            Process_Option (Argument, Position);
+         elsif Command_For (Argument, Command) then
+            Set_Command (Command);
+         else
+            Add_Value (Argument);
+         end if;
+      end Process_Token;
+
+      procedure Validate_Options is
+         Required : Natural;
+      begin
+         if Item.Once and then Item.Command /= Daemon_Command then
+            Fail ("--once is valid only with daemon", "qm.cli.option-scope");
+            return;
+         elsif Length (Item.Project_Selector) > 0
+           and then Item.Command not in Maintenance_Command | Daemon_Command
+         then
+            Fail ("--project requires maintenance or daemon", "qm.cli.option-scope");
+            return;
+         end if;
+         Required :=
+           (case Item.Command is
+               when Campaign_Create_Command | Campaign_Start_Command | Campaign_Pause_Command
+                  | Campaign_Resume_Command | Campaign_Reconcile_Command | Release_Qualify_Command
+                  | Approve_Command | Reject_Command => 1,
+               when Release_Create_Command | Release_Export_Command | Reconcile_Assessment_Command => 2,
+               when others => 0);
+         if Value_Count /= Required then
+            Fail
+              ("command requires" & Natural'Image (Required) & " operand(s)",
+               "qm.cli.operand-count");
+         end if;
+      end Validate_Options;
    begin
       Item :=
         (Command         => Help_Command,
@@ -119,114 +283,13 @@ package body Quality_Manager.CLI is
          declare
             Argument : constant String := Arguments (Index);
          begin
-            if Argument = "--config" then
-               if Index = Arguments.Last_Index then
-                  Fail ("--config requires a path", "qm.cli.missing-value");
-               else
-                  Index := Index + 1;
-                  Set_Config (Arguments (Index));
-               end if;
-            elsif Argument'Length > 9 and then Argument (Argument'First .. Argument'First + 8) = "--config=" then
-               Set_Config (Argument (Argument'First + 9 .. Argument'Last));
-            elsif Argument = "--format" then
-               if Index = Arguments.Last_Index then
-                  Fail ("--format requires a value", "qm.cli.missing-value");
-               else
-                  Index := Index + 1;
-                  Set_Format (Arguments (Index));
-               end if;
-            elsif Argument'Length > 9 and then Argument (Argument'First .. Argument'First + 8) = "--format=" then
-               Set_Format (Argument (Argument'First + 9 .. Argument'Last));
-            elsif Argument = "--project" then
-               if Seen_Project then
-                  Fail ("--project may be supplied only once", "qm.cli.duplicate-option");
-               elsif Index = Arguments.Last_Index then
-                  Fail ("--project requires a selector", "qm.cli.missing-value");
-               else
-                  Index := Index + 1;
-                  Item.Project_Selector := To_Unbounded_String (Arguments (Index));
-                  Seen_Project := True;
-               end if;
-            elsif Argument = "--dry-run" then
-               Item.Dry_Run := True;
-            elsif Argument = "--once" then
-               Item.Once := True;
-            elsif Argument = "--help" or else Argument = "-h" or else Argument = "help" then
-               Set_Command (Help_Command);
-            elsif Argument = "--version" or else Argument = "version" then
-               Set_Command (Version_Command);
-            elsif Argument = "doctor" then
-               Set_Command (Doctor_Command);
-            elsif Argument = "maintenance" then
-               Set_Command (Maintenance_Command);
-            elsif Argument = "daemon" then
-               Set_Command (Daemon_Command);
-            elsif Argument = "status" then
-               Set_Command (Status_Command);
-            elsif Argument = "queue" then
-               Set_Command (Queue_Command);
-            elsif Argument = "approvals" then
-               Set_Command (Approvals_Command);
-            elsif Argument = "history" then
-               Set_Command (History_Command);
-            elsif Argument = "events" then
-               Set_Command (Events_Command);
-            elsif Argument = "recover" then
-               Set_Command (Recover_Command);
-            elsif Argument = "reconcile-assessment" then
-               Set_Command (Reconcile_Assessment_Command);
-            elsif Argument = "campaign-create" then
-               Set_Command (Campaign_Create_Command);
-            elsif Argument = "campaign-start" then
-               Set_Command (Campaign_Start_Command);
-            elsif Argument = "campaign-pause" then
-               Set_Command (Campaign_Pause_Command);
-            elsif Argument = "campaign-resume" then
-               Set_Command (Campaign_Resume_Command);
-            elsif Argument = "campaign-reconcile" then
-               Set_Command (Campaign_Reconcile_Command);
-            elsif Argument = "release-create" then
-               Set_Command (Release_Create_Command);
-            elsif Argument = "release-qualify" then
-               Set_Command (Release_Qualify_Command);
-            elsif Argument = "release-export" then
-               Set_Command (Release_Export_Command);
-            elsif Argument = "approve" then
-               Set_Command (Approve_Command);
-            elsif Argument = "reject" then
-               Set_Command (Reject_Command);
-            elsif Argument'Length > 0 and then Argument (Argument'First) /= '-' then
-               Add_Value (Argument);
-            else
-               Fail ("unknown argument: " & Argument, "qm.cli.unknown-argument");
-            end if;
+            Process_Token (Argument, Index);
          end;
          exit when Result.Kind /= Success;
          Index := Index + 1;
       end loop;
-      if Result.Kind = Success and then Item.Once and then Item.Command /= Daemon_Command then
-         Fail ("--once is valid only with daemon", "qm.cli.option-scope");
-      elsif Result.Kind = Success
-        and then Length (Item.Project_Selector) > 0
-        and then Item.Command not in Maintenance_Command | Daemon_Command
-      then
-         Fail ("--project requires maintenance or daemon", "qm.cli.option-scope");
-      elsif Result.Kind = Success then
-         declare
-            Required : constant Natural :=
-              (case Item.Command is
-                  when Campaign_Create_Command | Campaign_Start_Command | Campaign_Pause_Command
-                     | Campaign_Resume_Command | Campaign_Reconcile_Command | Release_Qualify_Command
-                     | Approve_Command | Reject_Command => 1,
-                  when Release_Create_Command | Release_Export_Command | Reconcile_Assessment_Command => 2,
-                  when others => 0);
-         begin
-            if Value_Count /= Required then
-               Fail
-                 ("command requires" & Natural'Image (Required) & " operand(s)",
-                  "qm.cli.operand-count");
-            end if;
-         end;
+      if Result.Kind = Success then
+         Validate_Options;
       end if;
    exception
       when others =>  --  AQ: audited exception boundary

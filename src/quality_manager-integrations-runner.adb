@@ -219,34 +219,51 @@ package body Quality_Manager.Integrations.Runner is
          Kind_Node  : constant Jsonlib.Documents.Node := Document.Member (Root, "kind");
          Code_Node  : constant Jsonlib.Documents.Node := Document.Member (Root, "error_code");
          Detail_Node : constant Jsonlib.Documents.Node := Document.Member (Root, "diagnostic");
+
+         function Valid_Error_Document return Boolean is
+         begin
+            if not Jsonlib.Documents.Is_Present (Kind_Node) then
+               return False;
+            elsif not Jsonlib.Documents.Is_Present (Code_Node) then
+               return False;
+            elsif not Jsonlib.Documents.Is_Present (Detail_Node) then
+               return False;
+            elsif Document.Kind (Kind_Node) /= Jsonlib.Documents.String_Value then
+               return False;
+            elsif Document.Kind (Code_Node) /= Jsonlib.Documents.String_Value then
+               return False;
+            elsif Document.Kind (Detail_Node) /= Jsonlib.Documents.String_Value then
+               return False;
+            else
+               return Document.As_String (Kind_Node) = "error";
+            end if;
+         end Valid_Error_Document;
+
+         function Kind_For (Code : String; Default : Result_Kind) return Result_Kind is
+         begin
+            if Code = "MR-FRAMEWORK-0011" then return Not_Found;
+            elsif Code in "MR-FRAMEWORK-0009" | "MR-FRAMEWORK-0024" then return Not_Ready;
+            elsif Code in "MR-FRAMEWORK-0010" | "MR-FRAMEWORK-0021" | "MR-FRAMEWORK-0031" then
+               return Temporarily_Unavailable;
+            elsif Code = "MR-FRAMEWORK-0012" then return Stale_Evidence;
+            elsif Code in "MR-FRAMEWORK-0013" | "MR-FRAMEWORK-0014" then return Integrity_Error;
+            elsif Code in "MR-FRAMEWORK-0027" | "MR-FRAMEWORK-0029" |
+                          "MR-FRAMEWORK-0030" | "MR-FRAMEWORK-0032"
+            then
+               return Authorization_Required;
+            elsif Code = "MR-FRAMEWORK-0033" then return Negative_Result;
+            else return Default;
+            end if;
+         end Kind_For;
       begin
-         if not Jsonlib.Documents.Is_Present (Kind_Node)
-           or else not Jsonlib.Documents.Is_Present (Code_Node)
-           or else not Jsonlib.Documents.Is_Present (Detail_Node)
-           or else Document.Kind (Kind_Node) /= Jsonlib.Documents.String_Value
-           or else Document.Kind (Code_Node) /= Jsonlib.Documents.String_Value
-           or else Document.Kind (Detail_Node) /= Jsonlib.Documents.String_Value
-           or else Document.As_String (Kind_Node) /= "error"
-         then
+         if not Valid_Error_Document then
             return;
          end if;
          declare
             Code   : constant String := Document.As_String (Code_Node);
             Detail : constant String := Document.As_String (Detail_Node);
-            Kind   : Result_Kind := Result.Status.Kind;
+            Kind   : constant Result_Kind := Kind_For (Code, Result.Status.Kind);
          begin
-            if Code = "MR-FRAMEWORK-0011" then Kind := Not_Found;
-            elsif Code in "MR-FRAMEWORK-0009" | "MR-FRAMEWORK-0024" then Kind := Not_Ready;
-            elsif Code in "MR-FRAMEWORK-0010" | "MR-FRAMEWORK-0021" | "MR-FRAMEWORK-0031" then
-               Kind := Temporarily_Unavailable;
-            elsif Code = "MR-FRAMEWORK-0012" then Kind := Stale_Evidence;
-            elsif Code in "MR-FRAMEWORK-0013" | "MR-FRAMEWORK-0014" then Kind := Integrity_Error;
-            elsif Code in "MR-FRAMEWORK-0027" | "MR-FRAMEWORK-0029" |
-                          "MR-FRAMEWORK-0030" | "MR-FRAMEWORK-0032"
-            then
-               Kind := Authorization_Required;
-            elsif Code = "MR-FRAMEWORK-0033" then Kind := Negative_Result;
-            end if;
             Result.Status := Make_Result (Kind, Detail, Code);
          end;
       end;
@@ -361,6 +378,69 @@ package body Quality_Manager.Integrations.Runner is
       return True;
    end Required_String;
 
+   procedure Read_Snapshot_Field
+     (Document : Jsonlib.Documents.Document;
+      Root     : Jsonlib.Documents.Node;
+      Name     : String;
+      Value    : out Unbounded_String;
+      Complete : in out Boolean) is
+   begin
+      if not Required_String (Document, Root, Name, Value) then
+         Complete := False;
+      end if;
+   end Read_Snapshot_Field;
+
+   procedure Read_Snapshot_Fields
+     (Document : Jsonlib.Documents.Document;
+      Root     : Jsonlib.Documents.Node;
+      Snapshot : in out Task_Snapshot;
+      State    : out Unbounded_String;
+      Complete : out Boolean) is
+   begin
+      Complete := True;
+      Read_Snapshot_Field (Document, Root, "operation_id", Snapshot.Operation_Id, Complete);
+      Read_Snapshot_Field (Document, Root, "project_identity", Snapshot.Project_Identity, Complete);
+      Read_Snapshot_Field (Document, Root, "source_fingerprint", Snapshot.Source_Fingerprint, Complete);
+      Read_Snapshot_Field (Document, Root, "task_id", Snapshot.Task_Id, Complete);
+      Read_Snapshot_Field (Document, Root, "task_revision", Snapshot.Task_Revision, Complete);
+      Read_Snapshot_Field
+        (Document, Root, "effective_task_revision", Snapshot.Effective_Task_Revision, Complete);
+      Read_Snapshot_Field (Document, Root, "execution_policy", Snapshot.Execution_Policy, Complete);
+      Read_Snapshot_Field
+        (Document, Root, "execution_generation", Snapshot.Execution_Generation, Complete);
+      Read_Snapshot_Field (Document, Root, "execution_state", State, Complete);
+      Read_Snapshot_Field (Document, Root, "native_task_state", Snapshot.Native_Task_State, Complete);
+      Read_Snapshot_Field (Document, Root, "core_state", Snapshot.Core_State, Complete);
+      Read_Snapshot_Field (Document, Root, "workspace_id", Snapshot.Workspace_Id, Complete);
+      Read_Snapshot_Field (Document, Root, "workspace_state", Snapshot.Workspace_State, Complete);
+      Read_Snapshot_Field (Document, Root, "result", Snapshot.Native_Result, Complete);
+      Read_Snapshot_Field (Document, Root, "audit_reference", Snapshot.Audit_Reference, Complete);
+   end Read_Snapshot_Fields;
+
+   procedure Decode_State
+     (Text   : String;
+      State  : out Execution_State;
+      Result : out Operation_Result) is
+   begin
+      if Text = "not_ready" then State := Not_Ready_State;
+      elsif Text = "ready" then State := Ready_State;
+      elsif Text = "executing" then State := Executing_State;
+      elsif Text = "blocked" then State := Blocked_State;
+      elsif Text = "awaiting_integration" then State := Awaiting_Integration_State;
+      elsif Text = "verifying" then State := Verifying_State;
+      elsif Text = "completed" then State := Completed_State;
+      elsif Text = "failed" then State := Failed_State;
+      elsif Text = "cancelled" then State := Cancelled_State;
+      else
+         Result := Make_Result
+           (Incompatible_Contract,
+            "unknown model_runner execution state: " & Text,
+            "qm.runner.state-unknown");
+         return;
+      end if;
+      Result := Make_Result (Success);
+   end Decode_State;
+
    procedure Decode_Snapshot
      (Response : JSON_CLI.Response;
       Snapshot : out Task_Snapshot;
@@ -368,6 +448,7 @@ package body Quality_Manager.Integrations.Runner is
       Document : Jsonlib.Documents.Document;
       State    : Unbounded_String;
       Ready    : Jsonlib.Documents.Node;
+      Complete : Boolean;
    begin
       Snapshot := (others => <>);
       if Response.Status.Kind not in Success | Negative_Result then
@@ -382,26 +463,13 @@ package body Quality_Manager.Integrations.Runner is
          Root : constant Jsonlib.Documents.Node := Document.Root;
       begin
          Ready := Document.Member (Root, "ready");
-         if not Required_String (Document, Root, "operation_id", Snapshot.Operation_Id)
-           or else not Required_String (Document, Root, "project_identity", Snapshot.Project_Identity)
-           or else not Required_String (Document, Root, "source_fingerprint", Snapshot.Source_Fingerprint)
-           or else not Required_String (Document, Root, "task_id", Snapshot.Task_Id)
-           or else not Required_String (Document, Root, "task_revision", Snapshot.Task_Revision)
-           or else not Required_String
-             (Document, Root, "effective_task_revision", Snapshot.Effective_Task_Revision)
-           or else not Required_String (Document, Root, "execution_policy", Snapshot.Execution_Policy)
-           or else not Required_String
-             (Document, Root, "execution_generation", Snapshot.Execution_Generation)
-           or else not Required_String (Document, Root, "execution_state", State)
-           or else not Required_String (Document, Root, "native_task_state", Snapshot.Native_Task_State)
-           or else not Required_String (Document, Root, "core_state", Snapshot.Core_State)
-           or else not Required_String (Document, Root, "workspace_id", Snapshot.Workspace_Id)
-           or else not Required_String (Document, Root, "workspace_state", Snapshot.Workspace_State)
-           or else not Required_String (Document, Root, "result", Snapshot.Native_Result)
-           or else not Required_String (Document, Root, "audit_reference", Snapshot.Audit_Reference)
-           or else not Jsonlib.Documents.Is_Present (Ready)
-           or else Document.Kind (Ready) /= Jsonlib.Documents.Boolean_Value
-         then
+         Read_Snapshot_Fields (Document, Root, Snapshot, State, Complete);
+         if not Jsonlib.Documents.Is_Present (Ready) then
+            Complete := False;
+         elsif Document.Kind (Ready) /= Jsonlib.Documents.Boolean_Value then
+            Complete := False;
+         end if;
+         if not Complete then
             Result := Make_Result
               (Incompatible_Contract, "model_runner work snapshot is incomplete", "qm.runner.snapshot");
             return;
@@ -409,27 +477,7 @@ package body Quality_Manager.Integrations.Runner is
          Snapshot.Ready := Document.As_Boolean (Ready);
       end;
 
-      declare
-         Text : constant String := To_String (State);
-      begin
-         if Text = "not_ready" then Snapshot.State := Not_Ready_State;
-         elsif Text = "ready" then Snapshot.State := Ready_State;
-         elsif Text = "executing" then Snapshot.State := Executing_State;
-         elsif Text = "blocked" then Snapshot.State := Blocked_State;
-         elsif Text = "awaiting_integration" then Snapshot.State := Awaiting_Integration_State;
-         elsif Text = "verifying" then Snapshot.State := Verifying_State;
-         elsif Text = "completed" then Snapshot.State := Completed_State;
-         elsif Text = "failed" then Snapshot.State := Failed_State;
-         elsif Text = "cancelled" then Snapshot.State := Cancelled_State;
-         else
-            Result := Make_Result
-              (Incompatible_Contract,
-               "unknown model_runner execution state: " & Text,
-               "qm.runner.state-unknown");
-            return;
-         end if;
-      end;
-      Result := Make_Result (Success);
+      Decode_State (To_String (State), Snapshot.State, Result);
    exception
       when others =>  --  AQ: audited exception boundary
          Result := Make_Result

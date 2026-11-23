@@ -256,7 +256,7 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | Task | State | Evidence |
 | --- | --- | --- |
 | P11-01 complete AUnit suites | complete | 25/25 tests pass, including executable CLI acceptance |
-| P11-02 90% production coverage | complete | 6,583/7,313 production body lines, 90.0178%; the CLI and all bodies are measured |
+| P11-02 90% production coverage | complete | 7,209/8,007 production body lines, 90.0325%; the CLI and all bodies are measured |
 | P11-03 applicable GNATprove | complete | Journal state machine SPARK flow/proof passes |
 | P11-04 GNATdoc | complete | project documentation generation succeeds |
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
@@ -379,12 +379,14 @@ assessments 27 and 28. The latter passed exact commit, build, reproducibility, t
 still had nine nonpassing quality indicators, so qualification issued no bundle.
 
 Assessment 29 confirmed the native Ada release checker, audited exception boundaries, and canonical release manifest.
-The isolated Alire build remains blocked because `config` and `representation` have no remote repository and the
-required `hostkit` revision is not published. Local development pins remain necessary until exact remote releases are
-available; the unpinned `alire.release.toml` records the intended source-only dependency contract.
+The isolated Alire build remains blocked because `config` and `representation` have no remote repository, while
+the direct application dependencies are not published in the Alire index. The required `hostkit`, `jsonlib`,
+`database`, and `cryptolib` revisions are present in their Git remotes, but that does not satisfy the unpinned
+release manifest. Local development pins remain necessary until exact Alire releases are available;
+`alire.release.toml` records the intended source-only dependency contract.
 
 Coordinator ownership now uses an expiry-aware durable lease with fencing generations and renewal before external
 work. The suite kills a helper process without finalization, reopens its database, reconstructs the prepared journal
 intent, rejects a competing opener, verifies expired-owner takeover, and completes 128 acquire/release cycles. The
-full production measurement is 6,583/7,313 lines (90.0178%), satisfying the stabilization gate without exclusions or
+full production measurement is 7,209/8,007 lines (90.0325%), satisfying the stabilization gate without exclusions or
 carrying forward an earlier partial-scope result.

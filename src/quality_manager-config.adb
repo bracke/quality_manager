@@ -76,63 +76,59 @@ package body Quality_Manager.Config is
 
       function Available (Count : Positive) return Boolean is
         (I + Integer (Count) - 1 <= Text'Last);
+
+      function Valid_Two_Byte return Boolean is
+      begin
+         return Available (2) and then Is_Continuation (Byte (1));
+      end Valid_Two_Byte;
+
+      function Valid_Three_Byte return Boolean is
+      begin
+         if not Available (3) then
+            return False;
+         elsif Byte (0) = 16#E0# then
+            return Byte (1) in 16#A0# .. 16#BF# and then Is_Continuation (Byte (2));
+         elsif Byte (0) = 16#ED# then
+            return Byte (1) in 16#80# .. 16#9F# and then Is_Continuation (Byte (2));
+         else
+            return Is_Continuation (Byte (1)) and then Is_Continuation (Byte (2));
+         end if;
+      end Valid_Three_Byte;
+
+      function Valid_Four_Byte return Boolean is
+      begin
+         if not Available (4) then
+            return False;
+         elsif Byte (0) = 16#F0# then
+            return Byte (1) in 16#90# .. 16#BF#
+              and then Is_Continuation (Byte (2))
+              and then Is_Continuation (Byte (3));
+         elsif Byte (0) = 16#F4# then
+            return Byte (1) in 16#80# .. 16#8F#
+              and then Is_Continuation (Byte (2))
+              and then Is_Continuation (Byte (3));
+         else
+            return Is_Continuation (Byte (1))
+              and then Is_Continuation (Byte (2))
+              and then Is_Continuation (Byte (3));
+         end if;
+      end Valid_Four_Byte;
    begin
       while I <= Text'Last loop
          if Byte (0) <= 16#7F# then
             I := I + 1;
          elsif Byte (0) in 16#C2# .. 16#DF# then
-            if not Available (2) or else not Is_Continuation (Byte (1)) then
+            if not Valid_Two_Byte then
                return False;
             end if;
             I := I + 2;
-         elsif Byte (0) = 16#E0# then
-            if not Available (3)
-              or else Byte (1) not in 16#A0# .. 16#BF#
-              or else not Is_Continuation (Byte (2))
-            then
+         elsif Byte (0) in 16#E0# .. 16#EF# then
+            if not Valid_Three_Byte then
                return False;
             end if;
             I := I + 3;
-         elsif Byte (0) in 16#E1# .. 16#EC# or else Byte (0) in 16#EE# .. 16#EF# then
-            if not Available (3)
-              or else not Is_Continuation (Byte (1))
-              or else not Is_Continuation (Byte (2))
-            then
-               return False;
-            end if;
-            I := I + 3;
-         elsif Byte (0) = 16#ED# then
-            if not Available (3)
-              or else Byte (1) not in 16#80# .. 16#9F#
-              or else not Is_Continuation (Byte (2))
-            then
-               return False;
-            end if;
-            I := I + 3;
-         elsif Byte (0) = 16#F0# then
-            if not Available (4)
-              or else Byte (1) not in 16#90# .. 16#BF#
-              or else not Is_Continuation (Byte (2))
-              or else not Is_Continuation (Byte (3))
-            then
-               return False;
-            end if;
-            I := I + 4;
-         elsif Byte (0) in 16#F1# .. 16#F3# then
-            if not Available (4)
-              or else not Is_Continuation (Byte (1))
-              or else not Is_Continuation (Byte (2))
-              or else not Is_Continuation (Byte (3))
-            then
-               return False;
-            end if;
-            I := I + 4;
-         elsif Byte (0) = 16#F4# then
-            if not Available (4)
-              or else Byte (1) not in 16#80# .. 16#8F#
-              or else not Is_Continuation (Byte (2))
-              or else not Is_Continuation (Byte (3))
-            then
+         elsif Byte (0) in 16#F0# .. 16#F4# then
+            if not Valid_Four_Byte then
                return False;
             end if;
             I := I + 4;
@@ -234,6 +230,108 @@ package body Quality_Manager.Config is
          return "";
    end Read_File;
 
+   procedure Validate_Keys
+     (Store  : External_Store.Store;
+      Result : in out Operation_Result) is
+   begin
+      if Result.Kind /= Success then
+         return;
+      end if;
+      for Index in 1 .. External_Store.Count (Store) loop
+         if not Is_Allowed (External_Store.Key_At (Store, Index)) then
+            Result := Make_Result
+              (Invalid_Request,
+               "unknown configuration key: " & External_Store.Key_At (Store, Index),
+               "qm.config.unknown-key");
+            return;
+         end if;
+      end loop;
+   end Validate_Keys;
+
+   procedure Read_Required_Value
+     (Store         : External_Store.Store;
+      Name          : String;
+      Default       : String;
+      Error_Message : String;
+      Error_Code    : String;
+      Normalize     : Boolean;
+      Value         : in out Unbounded_String;
+      Result        : in out Operation_Result) is
+      Text : Unbounded_String;
+   begin
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Text := To_Unbounded_String (External_Reader.Get_String (Store, Name, Default));
+      if Length (Text) = 0 then
+         Result := Make_Result (Invalid_Request, Error_Message, Error_Code);
+      elsif Normalize then
+         Value := To_Unbounded_String (Normalize_Path (To_String (Text)));
+      else
+         Value := Text;
+      end if;
+   end Read_Required_Value;
+
+   procedure Read_Optional_Path
+     (Store  : External_Store.Store;
+      Name   : String;
+      Value  : in out Unbounded_String;
+      Result : in out Operation_Result) is
+      Text : Unbounded_String;
+   begin
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Text := To_Unbounded_String (External_Reader.Get_String (Store, Name, ""));
+      if Length (Text) = 0 then
+         Value := Null_Unbounded_String;
+      else
+         Value := To_Unbounded_String (Normalize_Path (To_String (Text)));
+      end if;
+   end Read_Optional_Path;
+
+   procedure Read_Positive
+     (Store         : External_Store.Store;
+      Name          : String;
+      Maximum       : Positive;
+      Error_Message : String;
+      Value         : in out Positive;
+      Result        : in out Operation_Result) is
+      Integer_Val : Interfaces.Integer_64;
+      Status      : External_Reader.Lookup_Status;
+   begin
+      if Result.Kind /= Success then
+         return;
+      end if;
+      External_Reader.Get_Integer (Store, Name, Integer_Val, Status);
+      if Status = External_Reader.Invalid then
+         Result := Make_Result (Invalid_Request, Error_Message, "qm.config.range");
+      elsif Status = External_Reader.Found and then Integer_Val not in 1 .. Interfaces.Integer_64 (Maximum) then
+         Result := Make_Result (Invalid_Request, Error_Message, "qm.config.range");
+      elsif Status = External_Reader.Found then
+         Value := Positive (Integer_Val);
+      end if;
+   end Read_Positive;
+
+   procedure Read_Dry_Run
+     (Store  : External_Store.Store;
+      Value  : in out Boolean;
+      Result : in out Operation_Result) is
+      Parsed : Boolean;
+      Status : External_Reader.Lookup_Status;
+   begin
+      if Result.Kind /= Success then
+         return;
+      end if;
+      External_Reader.Get_Boolean (Store, "autonomy.dry_run", Parsed, Status);
+      if Status = External_Reader.Invalid then
+         Result := Make_Result
+           (Invalid_Request, "autonomy.dry_run must be a boolean", "qm.config.type");
+      elsif Status = External_Reader.Found then
+         Value := Parsed;
+      end if;
+   end Read_Dry_Run;
+
    procedure Load
      (Path     : String;
       Required : Boolean;
@@ -242,9 +340,6 @@ package body Quality_Manager.Config is
       Store       : External_Store.Store (Capacity => 32, Values_Capacity => 64, Pool => 8_192);
       Parse       : External_Parsers.Parse_Result;
       Read_Ok     : Boolean;
-      Integer_Val : Interfaces.Integer_64;
-      Status      : External_Reader.Lookup_Status;
-      Bool_Val    : Boolean;
    begin
       Item := Defaults;
       if Path'Length = 0 then
@@ -280,165 +375,48 @@ package body Quality_Manager.Config is
          return;
       end if;
 
-      for Index in 1 .. External_Store.Count (Store) loop
-         if not Is_Allowed (External_Store.Key_At (Store, Index)) then
-            Result := Make_Result
-              (Invalid_Request,
-               "unknown configuration key: " & External_Store.Key_At (Store, Index),
-               "qm.config.unknown-key");
-            return;
-         end if;
-      end loop;
-
-      declare
-         Value : constant String := External_Reader.Get_String
-           (Store, "integrations.ada_quality", To_String (Item.Ada_Quality_Executable));
-      begin
-         if Value'Length = 0 then
-            Result := Make_Result
-              (Invalid_Request, "integrations.ada_quality must not be empty", "qm.config.empty-executable");
-            return;
-         end if;
-         Item.Ada_Quality_Executable := To_Unbounded_String (Value);
-      end;
-
-      declare
-         Value : constant String := External_Reader.Get_String
-           (Store, "integrations.ada_quality_summary",
-            To_String (Item.Ada_Quality_Summary_Executable));
-      begin
-         if Value'Length = 0 then
-            Result := Make_Result
-              (Invalid_Request, "integrations.ada_quality_summary must not be empty",
-               "qm.config.empty-executable");
-            return;
-         end if;
-         Item.Ada_Quality_Summary_Executable := To_Unbounded_String (Value);
-      end;
-
-      declare
-         Value : constant String := External_Reader.Get_String
-           (Store, "coordinator.database", To_String (Item.Coordinator_Database));
-      begin
-         if Value'Length = 0 then
-            Result := Make_Result
-              (Invalid_Request, "coordinator.database must not be empty", "qm.config.empty-path");
-            return;
-         end if;
-         Item.Coordinator_Database := To_Unbounded_String (Normalize_Path (Value));
-      end;
-
-      declare
-         Value : constant String := External_Reader.Get_String (Store, "quality.database", "");
-      begin
-         Item.Quality_Database :=
-           (if Value'Length = 0 then Null_Unbounded_String else To_Unbounded_String (Normalize_Path (Value)));
-      end;
-
-      declare
-         Value : constant String := External_Reader.Get_String (Store, "quality.policy", "");
-      begin
-         Item.Quality_Policy :=
-           (if Value'Length = 0 then Null_Unbounded_String else To_Unbounded_String (Normalize_Path (Value)));
-      end;
-
-      declare
-         Value : constant String := External_Reader.Get_String
-           (Store, "integrations.model_runner", To_String (Item.Model_Runner_Executable));
-      begin
-         if Value'Length = 0 then
-            Result := Make_Result
-              (Invalid_Request, "integrations.model_runner must not be empty", "qm.config.empty-executable");
-            return;
-         end if;
-         Item.Model_Runner_Executable := To_Unbounded_String (Value);
-      end;
-
-      declare
-         Value : constant String := External_Reader.Get_String
-           (Store, "integrations.improve", To_String (Item.Improve_Executable));
-      begin
-         if Value'Length = 0 then
-            Result := Make_Result
-              (Invalid_Request, "integrations.improve must not be empty", "qm.config.empty-executable");
-            return;
-         end if;
-         Item.Improve_Executable := To_Unbounded_String (Value);
-      end;
-
-      declare
-         Value : constant String := External_Reader.Get_String (Store, "integrations.improve_config", "");
-      begin
-         Item.Improve_Config :=
-           (if Value'Length = 0 then Null_Unbounded_String else To_Unbounded_String (Normalize_Path (Value)));
-      end;
-
-      declare
-         Value : constant String := External_Reader.Get_String
-           (Store, "integrations.improve_state", To_String (Item.Improve_State));
-      begin
-         if Value'Length = 0 then
-            Result := Make_Result
-              (Invalid_Request, "integrations.improve_state must not be empty", "qm.config.empty-path");
-            return;
-         end if;
-         Item.Improve_State := To_Unbounded_String (Normalize_Path (Value));
-      end;
-
-      External_Reader.Get_Integer (Store, "scheduler.assessment_workers", Integer_Val, Status);
-      if Status = External_Reader.Invalid
-        or else (Status = External_Reader.Found and then Integer_Val not in 1 .. 64)
-      then
-         Result := Make_Result
-           (Invalid_Request, "scheduler.assessment_workers must be in 1..64", "qm.config.range");
-         return;
-      elsif Status = External_Reader.Found then
-         Item.Assessment_Workers := Positive (Integer_Val);
-      end if;
-
-      External_Reader.Get_Integer (Store, "scheduler.agent_workers", Integer_Val, Status);
-      if Status = External_Reader.Invalid
-        or else (Status = External_Reader.Found and then Integer_Val not in 1 .. 64)
-      then
-         Result := Make_Result
-           (Invalid_Request, "scheduler.agent_workers must be in 1..64", "qm.config.range");
-         return;
-      elsif Status = External_Reader.Found then
-         Item.Agent_Workers := Positive (Integer_Val);
-      end if;
-
-      External_Reader.Get_Integer (Store, "scheduler.maximum_task_seconds", Integer_Val, Status);
-      if Status = External_Reader.Invalid
-        or else (Status = External_Reader.Found and then Integer_Val not in 1 .. 86_400)
-      then
-         Result := Make_Result
-           (Invalid_Request, "scheduler.maximum_task_seconds must be in 1..86400", "qm.config.range");
-         return;
-      elsif Status = External_Reader.Found then
-         Item.Maximum_Task_Seconds := Positive (Integer_Val);
-      end if;
-
-      External_Reader.Get_Integer (Store, "scheduler.remediation_attempts", Integer_Val, Status);
-      if Status = External_Reader.Invalid
-        or else (Status = External_Reader.Found and then Integer_Val not in 1 .. 10)
-      then
-         Result := Make_Result
-           (Invalid_Request, "scheduler.remediation_attempts must be in 1..10", "qm.config.range");
-         return;
-      elsif Status = External_Reader.Found then
-         Item.Remediation_Attempts := Positive (Integer_Val);
-      end if;
-
-      External_Reader.Get_Boolean (Store, "autonomy.dry_run", Bool_Val, Status);
-      if Status = External_Reader.Invalid then
-         Result := Make_Result
-           (Invalid_Request, "autonomy.dry_run must be a boolean", "qm.config.type");
-         return;
-      elsif Status = External_Reader.Found then
-         Item.Dry_Run := Bool_Val;
-      end if;
-
       Result := Make_Result (Success);
+      Validate_Keys (Store, Result);
+      Read_Required_Value
+        (Store, "integrations.ada_quality", To_String (Item.Ada_Quality_Executable),
+         "integrations.ada_quality must not be empty", "qm.config.empty-executable", False,
+         Item.Ada_Quality_Executable, Result);
+      Read_Required_Value
+        (Store, "integrations.ada_quality_summary", To_String (Item.Ada_Quality_Summary_Executable),
+         "integrations.ada_quality_summary must not be empty", "qm.config.empty-executable", False,
+         Item.Ada_Quality_Summary_Executable, Result);
+      Read_Required_Value
+        (Store, "coordinator.database", To_String (Item.Coordinator_Database),
+         "coordinator.database must not be empty", "qm.config.empty-path", True,
+         Item.Coordinator_Database, Result);
+      Read_Optional_Path (Store, "quality.database", Item.Quality_Database, Result);
+      Read_Optional_Path (Store, "quality.policy", Item.Quality_Policy, Result);
+      Read_Required_Value
+        (Store, "integrations.model_runner", To_String (Item.Model_Runner_Executable),
+         "integrations.model_runner must not be empty", "qm.config.empty-executable", False,
+         Item.Model_Runner_Executable, Result);
+      Read_Required_Value
+        (Store, "integrations.improve", To_String (Item.Improve_Executable),
+         "integrations.improve must not be empty", "qm.config.empty-executable", False,
+         Item.Improve_Executable, Result);
+      Read_Optional_Path (Store, "integrations.improve_config", Item.Improve_Config, Result);
+      Read_Required_Value
+        (Store, "integrations.improve_state", To_String (Item.Improve_State),
+         "integrations.improve_state must not be empty", "qm.config.empty-path", True,
+         Item.Improve_State, Result);
+      Read_Positive
+        (Store, "scheduler.assessment_workers", 64,
+         "scheduler.assessment_workers must be in 1..64", Item.Assessment_Workers, Result);
+      Read_Positive
+        (Store, "scheduler.agent_workers", 64,
+         "scheduler.agent_workers must be in 1..64", Item.Agent_Workers, Result);
+      Read_Positive
+        (Store, "scheduler.maximum_task_seconds", 86_400,
+         "scheduler.maximum_task_seconds must be in 1..86400", Item.Maximum_Task_Seconds, Result);
+      Read_Positive
+        (Store, "scheduler.remediation_attempts", 10,
+         "scheduler.remediation_attempts must be in 1..10", Item.Remediation_Attempts, Result);
+      Read_Dry_Run (Store, Item.Dry_Run, Result);
    exception
       when others =>  --  AQ: audited exception boundary
          Result := Make_Result

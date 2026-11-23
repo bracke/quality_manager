@@ -119,15 +119,173 @@ package body Quality_Manager.Planning is
       Candidate_Source : String;
       Plan             : out Plan_Result;
       Result           : out Operation_Result) is
-      Document : Jsonlib.Documents.Document;
-      Error    : Jsonlib.Errors.Error_Info;
-      Version  : Natural;
+      Document   : Jsonlib.Documents.Document;
+      Error      : Jsonlib.Errors.Error_Info;
+      Version    : Natural;
       Project_Id : Natural;
       Run_Id     : Natural;
       Command    : Unbounded_String;
       Source     : Unbounded_String;
       Dry_Run    : Boolean;
       Stored     : Boolean;
+
+      procedure Validate_Header
+        (Root  : Jsonlib.Documents.Node;
+         Data  : Jsonlib.Documents.Node;
+         Valid : in out Boolean) is
+      begin
+         if not Natural_Field (Document, Root, "schema_version", Version) then Valid := False;
+         elsif Version /= 2 then Valid := False;
+         end if;
+         if not String_Field (Document, Root, "command", Command) then Valid := False;
+         elsif To_String (Command) /= "plan" then Valid := False;
+         end if;
+         if not Jsonlib.Documents.Is_Present (Data) then Valid := False;
+         elsif Document.Kind (Data) /= Jsonlib.Documents.Object_Value then Valid := False;
+         end if;
+      end Validate_Header;
+
+      procedure Validate_Identity
+        (Data  : Jsonlib.Documents.Node;
+         Valid : in out Boolean) is
+      begin
+         if not String_Field (Document, Data, "plan_id", Plan.Plan_Id) then Valid := False;
+         elsif Length (Plan.Plan_Id) = 0 then Valid := False;
+         end if;
+         if not Natural_Field (Document, Data, "revision", Plan.Revision) then Valid := False;
+         elsif Plan.Revision = 0 then Valid := False;
+         end if;
+         if not Natural_Field (Document, Data, "project_id", Project_Id) then Valid := False;
+         elsif Project_Id /= Project.Quality_Project_Id then Valid := False;
+         end if;
+         if not Natural_Field (Document, Data, "run_id", Run_Id) then Valid := False;
+         elsif Run_Id /= Assessment_Run then Valid := False;
+         end if;
+         if not String_Field (Document, Data, "working_source_fingerprint", Source) then Valid := False;
+         elsif To_String (Source) /= Candidate_Source then Valid := False;
+         end if;
+      end Validate_Identity;
+
+      procedure Validate_Content
+        (Data  : Jsonlib.Documents.Node;
+         Valid : in out Boolean) is
+      begin
+         if not String_Field (Document, Data, "fingerprint", Plan.Fingerprint) then Valid := False;
+         elsif Length (Plan.Fingerprint) = 0 then Valid := False;
+         end if;
+         if not String_Field (Document, Data, "content_sha256", Plan.Content_SHA256) then Valid := False;
+         elsif not Valid_Content_SHA256 (To_String (Plan.Content_SHA256)) then Valid := False;
+         end if;
+         if not Boolean_Field (Document, Data, "dry_run", Dry_Run) then Valid := False;
+         elsif Dry_Run then Valid := False;
+         end if;
+         if not Boolean_Field (Document, Data, "stored", Stored) then Valid := False;
+         elsif not Stored then Valid := False;
+         end if;
+      end Validate_Content;
+
+      procedure Read_Findings
+        (Findings : Jsonlib.Documents.Node;
+         Values   : in out String_Vectors.Vector) is
+      begin
+         if not Jsonlib.Documents.Is_Present (Findings) then
+            Result := Make_Result
+              (Incompatible_Contract, "Improve task has no bounded finding set", "qm.planning.findings");
+            return;
+         elsif Document.Kind (Findings) /= Jsonlib.Documents.Array_Value then
+            Result := Make_Result
+              (Incompatible_Contract, "Improve task has no bounded finding set", "qm.planning.findings");
+            return;
+         elsif Document.Length (Findings) = 0 or else Document.Length (Findings) > Maximum_Findings then
+            Result := Make_Result
+              (Incompatible_Contract, "Improve task has no bounded finding set", "qm.planning.findings");
+            return;
+         end if;
+         for Index in 1 .. Document.Length (Findings) loop
+            declare
+               Finding : constant Jsonlib.Documents.Node := Document.Element (Findings, Index);
+            begin
+               if Document.Kind (Finding) /= Jsonlib.Documents.String_Value then
+                  Result := Make_Result
+                    (Incompatible_Contract, "Improve finding identity is invalid", "qm.planning.finding");
+                  return;
+               elsif Document.As_String (Finding)'Length = 0 then
+                  Result := Make_Result
+                    (Incompatible_Contract, "Improve finding identity is invalid", "qm.planning.finding");
+                  return;
+               end if;
+               Values.Append (Document.As_String (Finding));
+            end;
+         end loop;
+         Result := Make_Result (Success);
+      end Read_Findings;
+
+      procedure Append_Task
+        (Task_Id : Unbounded_String;
+         Values  : in out String_Vectors.Vector) is
+         Text : Unbounded_String;
+      begin
+         String_Sorting.Sort (Values);
+         if Values.Length > 1 then
+            for Index in Values.First_Index + 1 .. Values.Last_Index loop
+               if Values (Index - 1) = Values (Index) then
+                  Result := Make_Result
+                    (Integrity_Error, "Improve task repeats a finding identity",
+                     "qm.planning.finding-duplicate");
+                  return;
+               end if;
+            end loop;
+         end if;
+         for Finding of Values loop
+            if Length (Text) > 0 then
+               Append (Text, ASCII.LF);
+            end if;
+            Append (Text, Finding);
+         end loop;
+         declare
+            Fields : Quality_Manager.Identities.Identity_Field_Array (1 .. Natural (Values.Length));
+         begin
+            for Index in Values.First_Index .. Values.Last_Index loop
+               Fields (Index) := Quality_Manager.Identities.Text_Value (Values (Index));
+            end loop;
+            Plan.Tasks.Append
+              (Planned_Task'
+                 (Task_Id => Task_Id,
+                  Finding_Identities => Text,
+                  Finding_Digest => To_Unbounded_String
+                    (Quality_Manager.Identities.Canonical_Digest (Fields))));
+         end;
+         Result := Make_Result (Success);
+      end Append_Task;
+
+      procedure Process_Task (Node : Jsonlib.Documents.Node) is
+         Task_Id  : Unbounded_String;
+         Findings : Jsonlib.Documents.Node;
+         Values   : String_Vectors.Vector;
+      begin
+         if Document.Kind (Node) /= Jsonlib.Documents.Object_Value then
+            Result := Make_Result
+              (Incompatible_Contract, "Improve task identity is invalid", "qm.planning.task");
+            return;
+         elsif not String_Field (Document, Node, "id", Task_Id) then
+            Result := Make_Result
+              (Incompatible_Contract, "Improve task identity is invalid", "qm.planning.task");
+            return;
+         elsif Length (Task_Id) = 0 then
+            Result := Make_Result
+              (Incompatible_Contract, "Improve task identity is invalid", "qm.planning.task");
+            return;
+         elsif (for some Existing of Plan.Tasks => Existing.Task_Id = Task_Id) then
+            Result := Make_Result
+              (Incompatible_Contract, "Improve task identity is invalid", "qm.planning.task");
+            return;
+         end if;
+         Findings := Document.Member (Node, "findings");
+         Read_Findings (Findings, Values);
+         if Result.Kind = Success then
+            Append_Task (Task_Id, Values);
+         end if;
+      end Process_Task;
    begin
       Plan := (others => <>);
       if Response.Status.Kind /= Success then
@@ -147,34 +305,15 @@ package body Quality_Manager.Planning is
          Root  : constant Jsonlib.Documents.Node := Document.Root;
          Data  : constant Jsonlib.Documents.Node := Document.Member (Root, "data");
          Tasks : Jsonlib.Documents.Node;
+         Valid : Boolean := True;
       begin
-         if not Natural_Field (Document, Root, "schema_version", Version)
-           or else Version /= 2
-           or else not String_Field (Document, Root, "command", Command)
-           or else To_String (Command) /= "plan"
-           or else not Jsonlib.Documents.Is_Present (Data)
-           or else Document.Kind (Data) /= Jsonlib.Documents.Object_Value
-           or else not String_Field (Document, Data, "plan_id", Plan.Plan_Id)
-           or else Length (Plan.Plan_Id) = 0
-           or else not Natural_Field (Document, Data, "revision", Plan.Revision)
-           or else Plan.Revision = 0
-           or else not Natural_Field (Document, Data, "project_id", Project_Id)
-           or else Project_Id /= Project.Quality_Project_Id
-           or else not Natural_Field (Document, Data, "run_id", Run_Id)
-           or else Run_Id /= Assessment_Run
-           or else not String_Field (Document, Data, "working_source_fingerprint", Source)
-           or else To_String (Source) /= Candidate_Source
-           or else not String_Field (Document, Data, "fingerprint", Plan.Fingerprint)
-           or else Length (Plan.Fingerprint) = 0
-           or else not String_Field (Document, Data, "content_sha256", Plan.Content_SHA256)
-           or else not Valid_Content_SHA256 (To_String (Plan.Content_SHA256))
-           or else not Boolean_Field (Document, Data, "dry_run", Dry_Run)
-           or else Dry_Run
-           or else not Boolean_Field (Document, Data, "stored", Stored)
-           or else not Stored
-         then
+         Validate_Header (Root, Data, Valid);
+         Validate_Identity (Data, Valid);
+         Validate_Content (Data, Valid);
+         if not Valid then
             Result := Make_Result
-              (Incompatible_Contract, "Improve plan identity is incomplete or mismatched", "qm.planning.identity");
+              (Incompatible_Contract, "Improve plan identity is incomplete or mismatched",
+               "qm.planning.identity");
             return;
          end if;
          Tasks := Document.Member (Data, "tasks");
@@ -188,77 +327,10 @@ package body Quality_Manager.Planning is
             return;
          end if;
          for Index in 1 .. Document.Length (Tasks) loop
-            declare
-               Node      : constant Jsonlib.Documents.Node := Document.Element (Tasks, Index);
-               Task_Id   : Unbounded_String;
-               Findings  : Jsonlib.Documents.Node;
-               Values    : String_Vectors.Vector;
-               Text      : Unbounded_String;
-            begin
-               if Document.Kind (Node) /= Jsonlib.Documents.Object_Value
-                 or else not String_Field (Document, Node, "id", Task_Id)
-                 or else Length (Task_Id) = 0
-                 or else (for some Existing of Plan.Tasks => Existing.Task_Id = Task_Id)
-               then
-                  Result := Make_Result
-                    (Incompatible_Contract, "Improve task identity is invalid", "qm.planning.task");
-                  return;
-               end if;
-               Findings := Document.Member (Node, "findings");
-               if not Jsonlib.Documents.Is_Present (Findings)
-                 or else Document.Kind (Findings) /= Jsonlib.Documents.Array_Value
-                 or else Document.Length (Findings) = 0
-                 or else Document.Length (Findings) > Maximum_Findings
-               then
-                  Result := Make_Result
-                    (Incompatible_Contract, "Improve task has no bounded finding set", "qm.planning.findings");
-                  return;
-               end if;
-               for Finding_Index in 1 .. Document.Length (Findings) loop
-                  declare
-                     Finding : constant Jsonlib.Documents.Node := Document.Element (Findings, Finding_Index);
-                  begin
-                     if Document.Kind (Finding) /= Jsonlib.Documents.String_Value
-                       or else Document.As_String (Finding)'Length = 0
-                     then
-                        Result := Make_Result
-                          (Incompatible_Contract, "Improve finding identity is invalid", "qm.planning.finding");
-                        return;
-                     end if;
-                     Values.Append (Document.As_String (Finding));
-                  end;
-               end loop;
-               String_Sorting.Sort (Values);
-               if Values.Length > 1 then
-                  for Finding_Index in Values.First_Index + 1 .. Values.Last_Index loop
-                     if Values (Finding_Index - 1) = Values (Finding_Index) then
-                        Result := Make_Result
-                          (Integrity_Error, "Improve task repeats a finding identity", "qm.planning.finding-duplicate");
-                        return;
-                     end if;
-                  end loop;
-               end if;
-               for Finding of Values loop
-                  if Length (Text) > 0 then
-                     Append (Text, ASCII.LF);
-                  end if;
-                  Append (Text, Finding);
-               end loop;
-               declare
-                  Fields : Quality_Manager.Identities.Identity_Field_Array (1 .. Natural (Values.Length));
-               begin
-                  for Finding_Index in Values.First_Index .. Values.Last_Index loop
-                     Fields (Finding_Index) := Quality_Manager.Identities.Text_Value (Values (Finding_Index));
-                  end loop;
-                  Task_Vectors.Append
-                    (Plan.Tasks,
-                     Planned_Task'
-                       (Task_Id => Task_Id,
-                        Finding_Identities => Text,
-                        Finding_Digest => To_Unbounded_String
-                          (Quality_Manager.Identities.Canonical_Digest (Fields))));
-               end;
-            end;
+            Process_Task (Document.Element (Tasks, Index));
+            if Result.Kind /= Success then
+               return;
+            end if;
          end loop;
       end;
       Result := Make_Result (Success);
@@ -350,114 +422,132 @@ package body Quality_Manager.Planning is
       State    : Quality_Manager.Journal.Journal_State := Quality_Manager.Journal.Prepared;
       Response : Quality_Manager.Integrations.JSON_CLI.Response;
       Plan     : Plan_Result;
-   begin
-      Quality_Manager.Storage.Read (Store, "journal:" & Number (Operation), Item, Result);
-      if Result.Kind = Not_Found then
-         Quality_Manager.Storage.Prepare_Operation
-           (Store, Operation, "improve-plan", Intent, Pending, Result);
-         if Result.Kind /= Success then
-            return;
-         end if;
-      elsif Result.Kind /= Success then
-         return;
-      else
-         begin
-            State := Quality_Manager.Journal.Journal_State'Value (To_String (Item.State));
-         exception
-            when Constraint_Error =>
-               Result := Make_Result
-                 (Incompatible_Contract, "unknown planning journal state", "qm.planning.journal-state");
-               return;
-         end;
-         if Ada.Strings.Fixed.Index (To_String (Item.Payload), "intent=" & Intent) = 0 then
-            Result := Make_Result
-              (Integrity_Error, "planning operation identity has another intent", "qm.planning.intent");
-            return;
-         end if;
-      end if;
-
-      if State = Quality_Manager.Journal.Prepared then
-         Quality_Manager.Storage.Advance_Operation
-           (Store, Operation, State, Quality_Manager.Journal.Invoking, Pending, "", Result);
-         if Result.Kind /= Success then
-            return;
-         end if;
-         State := Quality_Manager.Journal.Invoking;
-      elsif State in Quality_Manager.Journal.Aborted | Quality_Manager.Journal.Needs_Intervention then
-         Result := Make_Result
-           (Authorization_Required, "Improve planning operation is terminally blocked", "qm.planning.terminal");
-         return;
-      end if;
-
-      --  Improve stores repeated generation for the same exact assessment as
-      --  one plan revision, so replay from Invoking is idempotent.
-      if State = Quality_Manager.Journal.Invoking then
-         Quality_Manager.Integrations.Improve.Generate_Plan
-           (Planner,
-            Ada.Strings.Fixed.Trim (Positive'Image (Project.Quality_Project_Id), Ada.Strings.Both),
-            Assessment_Run, Response);
-         Decode (Response, Project, Assessment_Run, Candidate_Source, Plan, Result);
-         if Result.Kind /= Success then
-            return;
-         end if;
-         Quality_Manager.Storage.Advance_Operation
-           (Store, Operation, State, Quality_Manager.Journal.Reconciling,
-            External_Id (Plan), "exact assessment plan observed", Result);
-         if Result.Kind /= Success then
-            return;
-         end if;
-         State := Quality_Manager.Journal.Reconciling;
-      else
-         declare
-            Payload : constant String := To_String (Item.Payload);
-            Marker  : constant String := "external_id=improve-plan:";
-            Start   : constant Natural := Ada.Strings.Fixed.Index
-              (Payload, Marker, Going => Ada.Strings.Backward);
-            Split   : Natural;
-         begin
-            if Start = 0 then
-               Result := Make_Result
-                 (Integrity_Error, "planning journal has no external plan", "qm.planning.external-id");
-               return;
-            end if;
-            Split := Ada.Strings.Fixed.Index
-              (Payload, ":", From => Start + Marker'Length);
-            if Split = 0 then
-               Result := Make_Result
-                 (Integrity_Error, "planning journal external identity is invalid", "qm.planning.external-id");
-               return;
-            end if;
-            declare
-               Last : Natural := Split + 1;
+      procedure Prepare_Journal is
+      begin
+         Quality_Manager.Storage.Read (Store, "journal:" & Number (Operation), Item, Result);
+         if Result.Kind = Not_Found then
+            Quality_Manager.Storage.Prepare_Operation
+              (Store, Operation, "improve-plan", Intent, Pending, Result);
+         elsif Result.Kind = Success then
             begin
-               while Last <= Payload'Last and then Payload (Last) in '0' .. '9' loop
-                  Last := Last + 1;
-               end loop;
-               Quality_Manager.Integrations.Improve.Read_Plan
-                 (Planner, Payload (Start + Marker'Length .. Split - 1),
-                  Natural'Value (Payload (Split + 1 .. Last - 1)), Response);
+               State := Quality_Manager.Journal.Journal_State'Value (To_String (Item.State));
+            exception
+               when Constraint_Error =>
+                  Result := Make_Result
+                    (Incompatible_Contract, "unknown planning journal state",
+                     "qm.planning.journal-state");
+                  return;
             end;
-         exception
-            when Constraint_Error =>
+            if Ada.Strings.Fixed.Index (To_String (Item.Payload), "intent=" & Intent) = 0 then
                Result := Make_Result
-                 (Integrity_Error, "planning journal external identity is invalid", "qm.planning.external-id");
-               return;
-         end;
-         Decode (Response, Project, Assessment_Run, Candidate_Source, Plan, Result);
-         if Result.Kind /= Success then
+                 (Integrity_Error, "planning operation identity has another intent",
+                  "qm.planning.intent");
+            end if;
+         end if;
+      end Prepare_Journal;
+
+      procedure Start_Invocation is
+      begin
+         if State = Quality_Manager.Journal.Prepared then
+            Quality_Manager.Storage.Advance_Operation
+              (Store, Operation, State, Quality_Manager.Journal.Invoking, Pending, "", Result);
+            if Result.Kind = Success then
+               State := Quality_Manager.Journal.Invoking;
+            end if;
+         elsif State in Quality_Manager.Journal.Aborted |
+                            Quality_Manager.Journal.Needs_Intervention
+         then
+            Result := Make_Result
+              (Authorization_Required, "Improve planning operation is terminally blocked",
+               "qm.planning.terminal");
+         end if;
+      end Start_Invocation;
+
+      procedure Read_Existing_Plan is
+         Payload : constant String := To_String (Item.Payload);
+         Marker  : constant String := "external_id=improve-plan:";
+         Start   : constant Natural := Ada.Strings.Fixed.Index
+           (Payload, Marker, Going => Ada.Strings.Backward);
+         Split   : Natural;
+      begin
+         if Start = 0 then
+            Result := Make_Result
+              (Integrity_Error, "planning journal has no external plan", "qm.planning.external-id");
             return;
          end if;
-      end if;
+         Split := Ada.Strings.Fixed.Index
+           (Payload, ":", From => Start + Marker'Length);
+         if Split = 0 then
+            Result := Make_Result
+              (Integrity_Error, "planning journal external identity is invalid",
+               "qm.planning.external-id");
+            return;
+         end if;
+         declare
+            Last : Natural := Split + 1;
+         begin
+            while Last <= Payload'Last and then Payload (Last) in '0' .. '9' loop
+               Last := Last + 1;
+            end loop;
+            Quality_Manager.Integrations.Improve.Read_Plan
+              (Planner, Payload (Start + Marker'Length .. Split - 1),
+               Natural'Value (Payload (Split + 1 .. Last - 1)), Response);
+         end;
+      exception
+         when Constraint_Error =>
+            Result := Make_Result
+              (Integrity_Error, "planning journal external identity is invalid",
+               "qm.planning.external-id");
+      end Read_Existing_Plan;
 
-      Persist_Tasks
-        (Store, Project, Assessment_Run, Candidate_Source, Policy_Digest, Workflow, Plan, Result);
+      procedure Obtain_Plan is
+      begin
+         if State = Quality_Manager.Journal.Invoking then
+            Quality_Manager.Integrations.Improve.Generate_Plan
+              (Planner,
+               Ada.Strings.Fixed.Trim
+                 (Positive'Image (Project.Quality_Project_Id), Ada.Strings.Both),
+               Assessment_Run, Response);
+            Decode (Response, Project, Assessment_Run, Candidate_Source, Plan, Result);
+            if Result.Kind = Success then
+               Quality_Manager.Storage.Advance_Operation
+                 (Store, Operation, State, Quality_Manager.Journal.Reconciling,
+                  External_Id (Plan), "exact assessment plan observed", Result);
+            end if;
+            if Result.Kind = Success then
+               State := Quality_Manager.Journal.Reconciling;
+            end if;
+         else
+            Read_Existing_Plan;
+            if Result.Kind = Success then
+               Decode (Response, Project, Assessment_Run, Candidate_Source, Plan, Result);
+            end if;
+         end if;
+      end Obtain_Plan;
+
+      procedure Commit_Plan is
+      begin
+         Persist_Tasks
+           (Store, Project, Assessment_Run, Candidate_Source, Policy_Digest, Workflow, Plan, Result);
+         if Result.Kind = Success and then State = Quality_Manager.Journal.Reconciling then
+            Quality_Manager.Storage.Advance_Operation
+              (Store, Operation, State, Quality_Manager.Journal.Committed,
+               External_Id (Plan), "approval-gated remediation work persisted", Result);
+         end if;
+      end Commit_Plan;
+   begin
+      Prepare_Journal;
       if Result.Kind /= Success then
          return;
       end if;
-      if State = Quality_Manager.Journal.Reconciling then
-         Quality_Manager.Storage.Advance_Operation
-           (Store, Operation, State, Quality_Manager.Journal.Committed,
-            External_Id (Plan), "approval-gated remediation work persisted", Result);
+      Start_Invocation;
+      if Result.Kind /= Success then
+         return;
       end if;
+      Obtain_Plan;
+      if Result.Kind /= Success then
+         return;
+      end if;
+      Commit_Plan;
    end Generate_Or_Reconcile;
 end Quality_Manager.Planning;

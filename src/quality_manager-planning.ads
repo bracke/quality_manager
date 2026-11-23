@@ -4,7 +4,9 @@ with Quality_Manager.Model;
 with Quality_Manager.Results;
 with Quality_Manager.Storage;
 
+--  Creates and reconciles exact Improve remediation plans.
 package Quality_Manager.Planning is
+   --  Public contract for this Quality Manager unit.
    procedure Generate_Or_Reconcile
      (Store            : in out Quality_Manager.Storage.Store;
       Planner          : Quality_Manager.Integrations.Improve.Adapter;
@@ -15,4 +17,14 @@ package Quality_Manager.Planning is
       Workflow         : Quality_Manager.Model.Workflow_Kind;
       Stable_Id        : String;
       Result           : out Quality_Manager.Results.Operation_Result);
+   --  Perform Generate Or Reconcile.
+   --  @param Store Store.
+   --  @param Planner Planner.
+   --  @param Project Project.
+   --  @param Assessment_Run Assessment Run.
+   --  @param Candidate_Source Candidate Source.
+   --  @param Policy_Digest Policy Digest.
+   --  @param Workflow Workflow.
+   --  @param Stable_Id Stable Id.
+   --  @param Result Result.
 end Quality_Manager.Planning;

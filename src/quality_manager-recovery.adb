@@ -166,6 +166,51 @@ package body Quality_Manager.Recovery is
       State : Quality_Manager.Model.Work_State;
       Ref   : constant String := "assessment:" &
         Ada.Strings.Fixed.Trim (Positive'Image (Positive (Evidence.Assessment_Id)), Ada.Strings.Both);
+
+      procedure Advance
+        (Expected : Quality_Manager.Model.Work_State;
+         Target   : Quality_Manager.Model.Work_State;
+         Phase    : String) is
+      begin
+         if Result.Kind = Success and then State = Expected then
+            Transition (Store, Work_Id, State, Target, Phase, Ref, Result);
+            if Result.Kind = Success then
+               State := Target;
+            end if;
+         end if;
+      end Advance;
+
+      procedure Complete_Incomplete is
+      begin
+         Advance
+           (Quality_Manager.Model.Needs_Intervention,
+            Quality_Manager.Model.Awaiting_Assessment, "adopted");
+         Advance
+           (Quality_Manager.Model.Executing,
+            Quality_Manager.Model.Inconclusive, "incomplete");
+         Advance
+           (Quality_Manager.Model.Awaiting_Assessment,
+            Quality_Manager.Model.Inconclusive, "incomplete");
+      end Complete_Incomplete;
+
+      procedure Complete_Current is
+      begin
+         Advance
+           (Quality_Manager.Model.Needs_Intervention,
+            Quality_Manager.Model.Awaiting_Integration, "adopted");
+         Advance
+           (Quality_Manager.Model.Executing,
+            Quality_Manager.Model.Awaiting_Integration, "adopted");
+         Advance
+           (Quality_Manager.Model.Awaiting_Integration,
+            Quality_Manager.Model.Awaiting_Assessment, "integration-not-required");
+         Advance
+           (Quality_Manager.Model.Awaiting_Assessment,
+            Quality_Manager.Model.Verifying, "verifying");
+         Advance
+           (Quality_Manager.Model.Verifying,
+            Quality_Manager.Model.Verified, "verified");
+      end Complete_Current;
    begin
       Quality_Manager.Storage.Read (Store, Work_Id, Work, Result);
       if Result.Kind /= Success then
@@ -181,53 +226,10 @@ package body Quality_Manager.Recovery is
       end;
       if State in Quality_Manager.Model.Verified | Quality_Manager.Model.Inconclusive then
          Result := Make_Result (Success);
-         return;
       elsif not Evidence.Complete then
-         if State = Quality_Manager.Model.Needs_Intervention then
-            Transition
-              (Store, Work_Id, State, Quality_Manager.Model.Awaiting_Assessment,
-               "adopted", Ref, Result);
-            State := Quality_Manager.Model.Awaiting_Assessment;
-         end if;
-         if Result.Kind = Success and then State = Quality_Manager.Model.Executing then
-            Transition
-              (Store, Work_Id, State, Quality_Manager.Model.Inconclusive,
-               "incomplete", Ref, Result);
-         elsif Result.Kind = Success and then State = Quality_Manager.Model.Awaiting_Assessment then
-            Transition
-              (Store, Work_Id, State, Quality_Manager.Model.Inconclusive,
-               "incomplete", Ref, Result);
-         end if;
-         return;
-      end if;
-
-      if State = Quality_Manager.Model.Needs_Intervention then
-         Transition
-           (Store, Work_Id, State, Quality_Manager.Model.Awaiting_Integration,
-            "adopted", Ref, Result);
-         State := Quality_Manager.Model.Awaiting_Integration;
-      elsif State = Quality_Manager.Model.Executing then
-         Transition
-           (Store, Work_Id, State, Quality_Manager.Model.Awaiting_Integration,
-            "adopted", Ref, Result);
-         State := Quality_Manager.Model.Awaiting_Integration;
-      end if;
-      if Result.Kind = Success and then State = Quality_Manager.Model.Awaiting_Integration then
-         Transition
-           (Store, Work_Id, State, Quality_Manager.Model.Awaiting_Assessment,
-            "integration-not-required", Ref, Result);
-         State := Quality_Manager.Model.Awaiting_Assessment;
-      end if;
-      if Result.Kind = Success and then State = Quality_Manager.Model.Awaiting_Assessment then
-         Transition
-           (Store, Work_Id, State, Quality_Manager.Model.Verifying,
-            "verifying", Ref, Result);
-         State := Quality_Manager.Model.Verifying;
-      end if;
-      if Result.Kind = Success and then State = Quality_Manager.Model.Verifying then
-         Transition
-           (Store, Work_Id, State, Quality_Manager.Model.Verified,
-            "verified", Ref, Result);
+         Complete_Incomplete;
+      else
+         Complete_Current;
       end if;
    end Complete_Work;
 
@@ -249,151 +251,192 @@ package body Quality_Manager.Recovery is
       Intent   : Unbounded_String;
       External : constant String := "assessment:" &
         Ada.Strings.Fixed.Trim (Positive'Image (Run), Ada.Strings.Both);
-   begin
-      if Operation = 0 then
-         Result := Make_Result (Invalid_Request, "operation identity must be nonzero", "qm.recovery.operation");
-         return;
-      end if;
-      Quality_Manager.Storage.Read
-        (Store, "journal:" & Operation_Number (Operation), Journal, Result);
-      if Result.Kind /= Success then
-         return;
-      elsif Journal.Kind /= Quality_Manager.Storage.Journal_Record then
-         Result := Make_Result
-           (Integrity_Error, "operation identity is not a journal record", "qm.recovery.journal-kind");
-         return;
-      end if;
+      procedure Load_Journal is
       begin
-         State := Quality_Manager.Journal.Journal_State'Value (To_String (Journal.State));
-      exception
-         when Constraint_Error =>
+         if Operation = 0 then
             Result := Make_Result
-              (Incompatible_Contract, "assessment journal state is unknown", "qm.recovery.journal-state");
+              (Invalid_Request, "operation identity must be nonzero", "qm.recovery.operation");
             return;
-      end;
-      if State not in Quality_Manager.Journal.Invoking | Quality_Manager.Journal.Reconciling
-        | Quality_Manager.Journal.Committed
-      then
-         Result := Make_Result
-           (Invalid_Request, "assessment journal is not reconcilable", "qm.recovery.journal-state");
-         return;
-      end if;
-
-      Quality_Manager.Storage.List
-        (Store, Quality_Manager.Storage.Work_Item_Record, Entries, 100_000, Result);
-      if Result.Kind /= Success then
-         return;
-      end if;
-      for Candidate of Entries loop
-         if Quality_Manager.Identities.Operation_Identity
-           ("maintenance-assessment", To_String (Candidate.Entity_Key)) = Operation
-         then
-            Work := Candidate;
-            Matches := Matches + 1;
          end if;
-      end loop;
-      if Matches /= 1 then
-         Result := Make_Result
-           (Integrity_Error, "assessment operation does not identify exactly one work item", "qm.recovery.work");
-         return;
-      end if;
-      Decode_Project (Work, Project, Result);
-      if Result.Kind /= Success then
-         return;
-      end if;
-      Quality_Manager.Integrations.Quality.Read_Assessment (Quality, Run, Response);
-      Quality_Manager.Verification.Decode_Assessment (Response, Evidence, Result);
-      if Result.Kind /= Success
-        or else not Evidence.Completed
-        or else Evidence.Assessment_Id /= Run
-        or else Evidence.Project_Id /= Project.Quality_Project_Id
-        or else Evidence.Project_Path /= Project.Canonical_Path
-      then
-         if Result.Kind = Success then
+         Quality_Manager.Storage.Read
+           (Store, "journal:" & Operation_Number (Operation), Journal, Result);
+         if Result.Kind /= Success then
+            return;
+         elsif Journal.Kind /= Quality_Manager.Storage.Journal_Record then
             Result := Make_Result
-              (Integrity_Error, "assessment does not match the interrupted work", "qm.recovery.assessment");
+              (Integrity_Error, "operation identity is not a journal record",
+               "qm.recovery.journal-kind");
+            return;
          end if;
-         return;
-      end if;
-      Selector := To_Unbounded_String
-        (Ada.Strings.Fixed.Trim (Positive'Image (Project.Quality_Project_Id), Ada.Strings.Both));
-      Intent := To_Unbounded_String
-        (Quality_Manager.Identities.Canonical_Digest
-           ([Quality_Manager.Identities.Text_Value ("authoritative-assessment-v1"),
-             Quality_Manager.Identities.Text_Value (To_String (Work.Entity_Key)),
-             Quality_Manager.Identities.Text_Value (To_String (Project.Quality_Database_Id)),
-             Quality_Manager.Identities.Number_Value
-               (Interfaces.Unsigned_64 (Project.Quality_Project_Id)),
-             Quality_Manager.Identities.Text_Value (To_String (Project.Canonical_Path)),
-             Quality_Manager.Identities.Text_Value (To_String (Selector)),
-             Quality_Manager.Identities.Text_Value (To_String (Evidence.Source_Fingerprint)),
-             Quality_Manager.Identities.Text_Value (To_String (Evidence.Policy_Fingerprint)),
-             Quality_Manager.Identities.Text_Value (To_String (Evidence.Toolchain_Fingerprint)),
-             Quality_Manager.Identities.Text_Value ("")]));
-      if Ada.Strings.Fixed.Index (To_String (Journal.Payload), "intent=" & To_String (Intent)) = 0 then
-         if State = Quality_Manager.Journal.Invoking then
-            Quality_Manager.Storage.Advance_Operation
-              (Store, Operation, State, Quality_Manager.Journal.Aborted,
-               External, "completed assessment does not match invocation intent", Result);
-            if Result.Kind /= Success then
+         begin
+            State := Quality_Manager.Journal.Journal_State'Value (To_String (Journal.State));
+         exception
+            when Constraint_Error =>
+               Result := Make_Result
+                 (Incompatible_Contract, "assessment journal state is unknown",
+                  "qm.recovery.journal-state");
                return;
+         end;
+         if State not in Quality_Manager.Journal.Invoking |
+                         Quality_Manager.Journal.Reconciling |
+                         Quality_Manager.Journal.Committed
+         then
+            Result := Make_Result
+              (Invalid_Request, "assessment journal is not reconcilable",
+               "qm.recovery.journal-state");
+         end if;
+      end Load_Journal;
+
+      procedure Find_Work is
+      begin
+         Quality_Manager.Storage.List
+           (Store, Quality_Manager.Storage.Work_Item_Record, Entries, 100_000, Result);
+         if Result.Kind /= Success then
+            return;
+         end if;
+         for Candidate of Entries loop
+            if Quality_Manager.Identities.Operation_Identity
+              ("maintenance-assessment", To_String (Candidate.Entity_Key)) = Operation
+            then
+               Work := Candidate;
+               Matches := Matches + 1;
             end if;
-            declare
-               Work_State : Quality_Manager.Model.Work_State;
-            begin
-               Work_State := Quality_Manager.Model.Work_State'Value (To_String (Work.State));
-               if Work_State in Quality_Manager.Model.Executing | Quality_Manager.Model.Needs_Intervention then
-                  Transition
-                    (Store, To_String (Work.Entity_Key), Work_State, Quality_Manager.Model.Blocked,
-                     "rejected", External, Result);
-                  if Result.Kind /= Success then
-                     return;
-                  end if;
-               end if;
-            exception
-               when Constraint_Error =>
-                  Result := Make_Result
-                    (Incompatible_Contract, "recovery work has an unknown state", "qm.recovery.work-state");
-                  return;
-            end;
+         end loop;
+         if Matches /= 1 then
+            Result := Make_Result
+              (Integrity_Error, "assessment operation does not identify exactly one work item",
+               "qm.recovery.work");
+         else
+            Decode_Project (Work, Project, Result);
+         end if;
+      end Find_Work;
+
+      function Evidence_Matches return Boolean is
+      begin
+         if not Evidence.Completed then return False;
+         elsif Evidence.Assessment_Id /= Run then return False;
+         elsif Evidence.Project_Id /= Project.Quality_Project_Id then return False;
+         else return Evidence.Project_Path = Project.Canonical_Path;
+         end if;
+      end Evidence_Matches;
+
+      procedure Read_Evidence is
+      begin
+         Quality_Manager.Integrations.Quality.Read_Assessment (Quality, Run, Response);
+         Quality_Manager.Verification.Decode_Assessment (Response, Evidence, Result);
+         if Result.Kind = Success and then not Evidence_Matches then
+            Result := Make_Result
+              (Integrity_Error, "assessment does not match the interrupted work",
+               "qm.recovery.assessment");
+         end if;
+      end Read_Evidence;
+
+      procedure Build_Intent is
+      begin
+         Selector := To_Unbounded_String
+           (Ada.Strings.Fixed.Trim
+              (Positive'Image (Project.Quality_Project_Id), Ada.Strings.Both));
+         Intent := To_Unbounded_String
+           (Quality_Manager.Identities.Canonical_Digest
+              ([Quality_Manager.Identities.Text_Value ("authoritative-assessment-v1"),
+                Quality_Manager.Identities.Text_Value (To_String (Work.Entity_Key)),
+                Quality_Manager.Identities.Text_Value (To_String (Project.Quality_Database_Id)),
+                Quality_Manager.Identities.Number_Value
+                  (Interfaces.Unsigned_64 (Project.Quality_Project_Id)),
+                Quality_Manager.Identities.Text_Value (To_String (Project.Canonical_Path)),
+                Quality_Manager.Identities.Text_Value (To_String (Selector)),
+                Quality_Manager.Identities.Text_Value (To_String (Evidence.Source_Fingerprint)),
+                Quality_Manager.Identities.Text_Value (To_String (Evidence.Policy_Fingerprint)),
+                Quality_Manager.Identities.Text_Value (To_String (Evidence.Toolchain_Fingerprint)),
+                Quality_Manager.Identities.Text_Value ("")]));
+      end Build_Intent;
+
+      procedure Reject_Mismatch is
+         Work_State : Quality_Manager.Model.Work_State;
+      begin
+         if State /= Quality_Manager.Journal.Invoking then
+            Result := Make_Result
+              (Integrity_Error, "assessment does not match the persisted invocation intent",
+               "qm.recovery.intent");
+            return;
+         end if;
+         Quality_Manager.Storage.Advance_Operation
+           (Store, Operation, State, Quality_Manager.Journal.Aborted,
+            External, "completed assessment does not match invocation intent", Result);
+         if Result.Kind /= Success then
+            return;
+         end if;
+         begin
+            Work_State := Quality_Manager.Model.Work_State'Value (To_String (Work.State));
+         exception
+            when Constraint_Error =>
+               Result := Make_Result
+                 (Incompatible_Contract, "recovery work has an unknown state",
+                  "qm.recovery.work-state");
+               return;
+         end;
+         if Work_State in Quality_Manager.Model.Executing |
+                          Quality_Manager.Model.Needs_Intervention
+         then
+            Transition
+              (Store, To_String (Work.Entity_Key), Work_State, Quality_Manager.Model.Blocked,
+               "rejected", External, Result);
+         end if;
+         if Result.Kind = Success then
             Result := Make_Result
               (Negative_Result,
                "assessment was observed but rejected because its invocation intent differs",
                "qm.recovery.intent-mismatch");
-         else
-            Result := Make_Result
-              (Integrity_Error, "assessment does not match the persisted invocation intent", "qm.recovery.intent");
          end if;
+      end Reject_Mismatch;
+
+      procedure Commit_Reconciliation is
+      begin
+         if State = Quality_Manager.Journal.Invoking then
+            Quality_Manager.Storage.Advance_Operation
+              (Store, Operation, State, Quality_Manager.Journal.Reconciling,
+               External, "operator confirmed completed assessment", Result);
+            if Result.Kind = Success then
+               State := Quality_Manager.Journal.Reconciling;
+            end if;
+         end if;
+         if Result.Kind = Success and then State = Quality_Manager.Journal.Reconciling then
+            Quality_Manager.Storage.Advance_Operation
+              (Store, Operation, State, Quality_Manager.Journal.Committed,
+               External, "assessment reconciled", Result);
+         end if;
+         if Result.Kind = Success then
+            Quality_Manager.Storage.Records.Save
+              (Store,
+               Quality_Manager.Storage.Schema.Project'
+                 (Key => Project,
+                  Enabled => True,
+                  Last_Assessment_Run => Run,
+                  Last_Source_Fingerprint => Evidence.Source_Fingerprint),
+               Result);
+         end if;
+         if Result.Kind = Success then
+            Complete_Work (Store, To_String (Work.Entity_Key), Evidence, Result);
+         end if;
+      end Commit_Reconciliation;
+   begin
+      Load_Journal;
+      if Result.Kind /= Success then
          return;
       end if;
-
-      if State = Quality_Manager.Journal.Invoking then
-         Quality_Manager.Storage.Advance_Operation
-           (Store, Operation, State, Quality_Manager.Journal.Reconciling,
-            External, "operator confirmed completed assessment", Result);
-         if Result.Kind /= Success then
-            return;
-         end if;
-         State := Quality_Manager.Journal.Reconciling;
+      Find_Work;
+      if Result.Kind /= Success then
+         return;
       end if;
-      if State = Quality_Manager.Journal.Reconciling then
-         Quality_Manager.Storage.Advance_Operation
-           (Store, Operation, State, Quality_Manager.Journal.Committed,
-            External, "assessment reconciled", Result);
-         if Result.Kind /= Success then
-            return;
-         end if;
+      Read_Evidence;
+      if Result.Kind /= Success then
+         return;
       end if;
-      Quality_Manager.Storage.Records.Save
-        (Store,
-         Quality_Manager.Storage.Schema.Project'
-           (Key => Project,
-            Enabled => True,
-            Last_Assessment_Run => Run,
-            Last_Source_Fingerprint => Evidence.Source_Fingerprint),
-         Result);
-      if Result.Kind = Success then
-         Complete_Work (Store, To_String (Work.Entity_Key), Evidence, Result);
+      Build_Intent;
+      if Ada.Strings.Fixed.Index (To_String (Journal.Payload), "intent=" & To_String (Intent)) = 0 then
+         Reject_Mismatch;
+         return;
       end if;
+      Commit_Reconciliation;
    end Reconcile_Assessment;
 end Quality_Manager.Recovery;

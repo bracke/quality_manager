@@ -87,8 +87,6 @@ package body Quality_Manager.Reporting is
       Format : Quality_Manager.CLI.Output_Format;
       Result : out Quality_Manager.Results.Operation_Result) return String is
       Values : Quality_Manager.Storage.Entity_Vectors.Vector;
-      Text   : Unbounded_String;
-      First  : Boolean := True;
       Recovery_Work : Quality_Manager.Recovery.Recovery_Vectors.Vector;
 
       procedure Add (Kind : Quality_Manager.Storage.Record_Kind) is
@@ -101,115 +99,141 @@ package body Quality_Manager.Reporting is
       function Kind_Name (Kind : Quality_Manager.Storage.Record_Kind) return String is
         (Ada.Strings.Fixed.Trim
            (Quality_Manager.Storage.Record_Kind'Image (Kind), Ada.Strings.Both));
+
+      procedure Select_Values is
+      begin
+         case View is
+            when Overall_Status =>
+               Add (Quality_Manager.Storage.Project_Record);
+               Add (Quality_Manager.Storage.Cycle_Record);
+               Add (Quality_Manager.Storage.Work_Item_Record);
+               Add (Quality_Manager.Storage.Dispatch_Record);
+               Add (Quality_Manager.Storage.Campaign_Record);
+               Add (Quality_Manager.Storage.Release_Record);
+            when Queue_Status =>
+               Add (Quality_Manager.Storage.Work_Item_Record);
+               Add (Quality_Manager.Storage.Dispatch_Record);
+               Add (Quality_Manager.Storage.Attempt_Record);
+            when Approval_Status =>
+               Add (Quality_Manager.Storage.Approval_Record);
+            when Workflow_History =>
+               Add (Quality_Manager.Storage.Cycle_Record);
+               Add (Quality_Manager.Storage.Campaign_Record);
+               Add (Quality_Manager.Storage.Release_Record);
+               Add (Quality_Manager.Storage.Verification_Record);
+            when Event_Stream =>
+               Add (Quality_Manager.Storage.Event_Record);
+            when Recovery_Status =>
+               Quality_Manager.Recovery.Reconstruct
+                 (Store, 100_000, Recovery_Work, Result);
+               if Result.Kind = Quality_Manager.Results.Success then
+                  for Item of Recovery_Work loop
+                     Values.Append
+                       (Quality_Manager.Storage.Stored_Entity'
+                          (Internal_Id => 1,
+                           Kind        => Quality_Manager.Storage.Journal_Record,
+                           Entity_Key  => Item.Operation_Key,
+                           State       => To_Unbounded_String
+                             (Quality_Manager.Journal.Journal_State'Image (Item.State)),
+                           Payload     => To_Unbounded_String
+                             (Quality_Manager.Journal.Recovery_Action'Image (Item.Action)),
+                           Terminal    => False,
+                           Generation  => 1));
+                  end loop;
+               end if;
+         end case;
+      end Select_Values;
+
+      function Render_JSON return String is
+         Output : Unbounded_String;
+         Is_First : Boolean := True;
+      begin
+         Append
+           (Output,
+            "{""schema_version"":1,""kind"":" & JSON_String (View_Name (View))
+            & ",""database_identity"":" & JSON_String (Quality_Manager.Storage.Identity (Store))
+            & ",""count"":" & Image (Natural (Values.Length)) & ",""items"":[");
+         for Item of Values loop
+            if not Is_First then
+               Append (Output, ",");
+            end if;
+            Is_First := False;
+            Append
+              (Output,
+               "{""record_kind"":" & JSON_String (Kind_Name (Item.Kind))
+               & ",""key"":" & JSON_String (To_String (Item.Entity_Key))
+               & ",""state"":" & JSON_String (To_String (Item.State))
+               & ",""terminal"":" & (if Item.Terminal then "true" else "false")
+               & ",""generation"":" & Image (Natural (Item.Generation))
+               & (if View = Event_Stream
+                  then ",""cause"":" & JSON_String (Event_Cause (Item))
+                    & ",""evidence"":" & JSON_String (Event_Evidence (Item))
+                  else "")
+               & (if View = Recovery_Status
+                  then ",""recovery_action"":" & JSON_String (To_String (Item.Payload))
+                  else "") & "}");
+         end loop;
+         Append (Output, "]}");
+         return To_String (Output);
+      end Render_JSON;
+
+      function Render_Terminal return String is
+         Output : Unbounded_String;
+      begin
+         Append
+           (Output, "Quality Manager " & View_Name (View) & ": "
+            & Image (Natural (Values.Length)) & " record(s)");
+         for Item of Values loop
+            Append
+              (Output, ASCII.LF & Kind_Name (Item.Kind) & "  "
+               & To_String (Item.Entity_Key) & "  " & To_String (Item.State)
+               & (if View = Event_Stream then "  cause=" & Event_Cause (Item)
+                  & (if Event_Evidence (Item) = "" then ""
+                     else "  evidence=" & Event_Evidence (Item))
+                  elsif View = Recovery_Status then "  " & To_String (Item.Payload)
+                  elsif Item.Terminal then "  terminal" else ""));
+         end loop;
+         return To_String (Output);
+      end Render_Terminal;
+
+      function Render_Markdown return String is
+         Output : Unbounded_String;
+      begin
+         Append
+           (Output, "# Quality Manager " & View_Name (View) & ASCII.LF & ASCII.LF
+            & "Database identity: `" & Quality_Manager.Storage.Identity (Store) & "`"
+            & ASCII.LF & ASCII.LF
+            & "| Kind | Key | State | Terminal"
+            & (if View = Event_Stream then " | Cause | Evidence" else "") & " |" & ASCII.LF
+            & "|---|---|---|---"
+            & (if View = Event_Stream then "|---|---" else "") & "|");
+         for Item of Values loop
+            Append
+              (Output, ASCII.LF & "| " & Kind_Name (Item.Kind) & " | `"
+               & To_String (Item.Entity_Key) & "` | " & To_String (Item.State)
+               & " | " & (if Item.Terminal then "yes" else "no")
+               & (if View = Event_Stream
+                  then " | " & Markdown_Cell (Event_Cause (Item))
+                    & " | " & Markdown_Cell (Event_Evidence (Item))
+                  else "") & " |");
+         end loop;
+         return To_String (Output);
+      end Render_Markdown;
    begin
       Result := Quality_Manager.Results.Make_Result (Quality_Manager.Results.Success);
-      case View is
-         when Overall_Status =>
-            Add (Quality_Manager.Storage.Project_Record);
-            Add (Quality_Manager.Storage.Cycle_Record);
-            Add (Quality_Manager.Storage.Work_Item_Record);
-            Add (Quality_Manager.Storage.Dispatch_Record);
-            Add (Quality_Manager.Storage.Campaign_Record);
-            Add (Quality_Manager.Storage.Release_Record);
-         when Queue_Status =>
-            Add (Quality_Manager.Storage.Work_Item_Record);
-            Add (Quality_Manager.Storage.Dispatch_Record);
-            Add (Quality_Manager.Storage.Attempt_Record);
-         when Approval_Status =>
-            Add (Quality_Manager.Storage.Approval_Record);
-         when Workflow_History =>
-            Add (Quality_Manager.Storage.Cycle_Record);
-            Add (Quality_Manager.Storage.Campaign_Record);
-            Add (Quality_Manager.Storage.Release_Record);
-            Add (Quality_Manager.Storage.Verification_Record);
-         when Event_Stream =>
-            Add (Quality_Manager.Storage.Event_Record);
-         when Recovery_Status =>
-            Quality_Manager.Recovery.Reconstruct
-              (Store, 100_000, Recovery_Work, Result);
-            if Result.Kind = Quality_Manager.Results.Success then
-               for Item of Recovery_Work loop
-                  Values.Append
-                    (Quality_Manager.Storage.Stored_Entity'
-                       (Internal_Id => 1,
-                      Kind        => Quality_Manager.Storage.Journal_Record,
-                      Entity_Key  => Item.Operation_Key,
-                      State       => To_Unbounded_String
-                        (Quality_Manager.Journal.Journal_State'Image (Item.State)),
-                      Payload     => To_Unbounded_String
-                        (Quality_Manager.Journal.Recovery_Action'Image (Item.Action)),
-                      Terminal    => False,
-                      Generation  => 1));
-               end loop;
-            end if;
-      end case;
+      Select_Values;
       if Result.Kind /= Quality_Manager.Results.Success then
          return "";
       end if;
 
       case Format is
          when Quality_Manager.CLI.JSON_Output =>
-            Append
-              (Text,
-               "{""schema_version"":1,""kind"":" & JSON_String (View_Name (View))
-               & ",""database_identity"":" & JSON_String (Quality_Manager.Storage.Identity (Store))
-               & ",""count"":" & Image (Natural (Values.Length)) & ",""items"":[");
-            for Item of Values loop
-               if not First then
-                  Append (Text, ",");
-               end if;
-               First := False;
-               Append
-                 (Text,
-                  "{""record_kind"":" & JSON_String (Kind_Name (Item.Kind))
-                  & ",""key"":" & JSON_String (To_String (Item.Entity_Key))
-                  & ",""state"":" & JSON_String (To_String (Item.State))
-                  & ",""terminal"":" & (if Item.Terminal then "true" else "false")
-                  & ",""generation"":" & Image (Natural (Item.Generation))
-                  & (if View = Event_Stream
-                     then ",""cause"":" & JSON_String (Event_Cause (Item))
-                       & ",""evidence"":" & JSON_String (Event_Evidence (Item))
-                     else "")
-                  & (if View = Recovery_Status
-                     then ",""recovery_action"":" & JSON_String (To_String (Item.Payload))
-                     else "") & "}");
-            end loop;
-            Append (Text, "]}");
+            return Render_JSON;
          when Quality_Manager.CLI.Terminal_Output =>
-            Append
-              (Text, "Quality Manager " & View_Name (View) & ": "
-               & Image (Natural (Values.Length)) & " record(s)");
-            for Item of Values loop
-               Append
-                 (Text, ASCII.LF & Kind_Name (Item.Kind) & "  "
-                  & To_String (Item.Entity_Key) & "  " & To_String (Item.State)
-                  & (if View = Event_Stream then "  cause=" & Event_Cause (Item)
-                     & (if Event_Evidence (Item) = "" then ""
-                        else "  evidence=" & Event_Evidence (Item))
-                     elsif View = Recovery_Status then "  " & To_String (Item.Payload)
-                     elsif Item.Terminal then "  terminal" else ""));
-            end loop;
+            return Render_Terminal;
          when Quality_Manager.CLI.Markdown_Output =>
-            Append
-              (Text, "# Quality Manager " & View_Name (View) & ASCII.LF & ASCII.LF
-               & "Database identity: `" & Quality_Manager.Storage.Identity (Store) & "`"
-               & ASCII.LF & ASCII.LF
-               & "| Kind | Key | State | Terminal"
-               & (if View = Event_Stream then " | Cause | Evidence" else "") & " |" & ASCII.LF
-               & "|---|---|---|---"
-               & (if View = Event_Stream then "|---|---" else "") & "|");
-            for Item of Values loop
-               Append
-                 (Text, ASCII.LF & "| " & Kind_Name (Item.Kind) & " | `"
-                  & To_String (Item.Entity_Key) & "` | " & To_String (Item.State)
-                  & " | " & (if Item.Terminal then "yes" else "no")
-                  & (if View = Event_Stream
-                     then " | " & Markdown_Cell (Event_Cause (Item))
-                       & " | " & Markdown_Cell (Event_Evidence (Item))
-                     else "") & " |");
-            end loop;
+            return Render_Markdown;
       end case;
-      return To_String (Text);
    exception
       when Constraint_Error =>
          Result := Quality_Manager.Results.Make_Result
