@@ -8,6 +8,7 @@ with Ada.Text_IO;
 with AUnit.Assertions; use AUnit.Assertions;
 with AUnit.Test_Caller;
 with Interfaces;
+with Hostkit.FS;
 
 with Quality_Manager.CLI;
 with Quality_Manager.Approvals;
@@ -29,6 +30,7 @@ with Quality_Manager.Reporting;
 with Quality_Manager.Recovery;
 with Quality_Manager.Releases;
 with Quality_Manager.Release_Artifacts;
+with Quality_Manager.Reproducibility;
 with Quality_Manager.Results;
 with Quality_Manager.Scheduler;
 with Quality_Manager.Priorities;

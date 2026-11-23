@@ -2,6 +2,7 @@ separate (Quality_Manager_Test_Suite)
 procedure Test_CLI_Executable (Item : in out Fixture) is
    pragma Unreferenced (Item);
    Database_Path : constant String := "/tmp/quality-manager-cli.database";
+   Dry_Database_Path : constant String := "/tmp/quality-manager-cli-dry.database";
    Config_Path   : constant String := "/tmp/quality-manager-cli.toml";
    Approval_Path : constant String := "/tmp/quality-manager-cli-approval.json";
    Campaign_Path : constant String := "/tmp/quality-manager-cli-campaign.json";
@@ -27,6 +28,10 @@ procedure Test_CLI_Executable (Item : in out Fixture) is
       Remove (Database_Path & ".wal");
       Remove (Database_Path & ".journal");
       Remove (Database_Path & ".lock");
+      Remove (Dry_Database_Path);
+      Remove (Dry_Database_Path & ".wal");
+      Remove (Dry_Database_Path & ".journal");
+      Remove (Dry_Database_Path & ".lock");
       Remove (Config_Path);
       Remove (Approval_Path);
       Remove (Campaign_Path);
@@ -105,6 +110,18 @@ procedure Test_CLI_Executable (Item : in out Fixture) is
 begin
    Cleanup;
    Assert (Ada.Directories.Exists (Fixture_Path), "fixture exists at " & Fixture_Path);
+   Write_File
+     (Config_Path,
+      "[coordinator]" & ASCII.LF & "database = """ & Dry_Database_Path & """" & ASCII.LF &
+      "[quality]" & ASCII.LF & "database = ""quality.db""" & ASCII.LF &
+      "[integrations]" & ASCII.LF & "ada_quality = """ & Fixture_Path & """" & ASCII.LF &
+      "ada_quality_summary = """ & Fixture_Path & """" & ASCII.LF &
+      "model_runner = """ & Fixture_Path & """" & ASCII.LF &
+      "[autonomy]" & ASCII.LF & "dry_run = false" & ASCII.LF);
+   Output := To_Unbounded_String
+     (Run (Args ("--config", Config_Path, "maintenance", "--dry-run")));
+   Assert (not Ada.Directories.Exists (Dry_Database_Path),
+           "configured maintenance dry-run does not initialize persistent storage");
    Quality_Manager.Storage.Open (Store, Database_Path, True, Result);
    Assert (Result.Kind = Quality_Manager.Results.Success, "CLI database initialized");
    Quality_Manager.Storage.Close (Store, Result);
@@ -115,7 +132,7 @@ begin
       "[integrations]" & ASCII.LF & "ada_quality = """ & Fixture_Path & """" & ASCII.LF &
       "ada_quality_summary = """ & Fixture_Path & """" & ASCII.LF &
       "model_runner = """ & Fixture_Path & """" & ASCII.LF &
-      "[autonomy]" & ASCII.LF & "dry_run = true" & ASCII.LF);
+      "[autonomy]" & ASCII.LF & "dry_run = false" & ASCII.LF);
 
    Output := To_Unbounded_String (Run (Args ("help")));
    Assert (Ada.Strings.Fixed.Index (To_String (Output), "Usage:") > 0, "help route executes");

@@ -14,6 +14,7 @@ procedure QM_Adapter_Fixture is
    Status : Integer := 0;
    Numeric_Mode : Boolean := False;
    Integrated_Marker : constant String := "/tmp/qm-adapter-project-integrated";
+   Retry_Marker : constant String := "/tmp/qm-adapter-retry-three";
 
    function Option_Value (Text, Name : String) return String is
       Marker : constant String := "--" & Name & " ";
@@ -94,13 +95,17 @@ procedure QM_Adapter_Fixture is
            (if Text = "project 8" then "8" else "7");
 
          function Selected_Project_Path return String is
-           (if Text = "project 8" then "/second" else "/project");
+           (if Ada.Strings.Fixed.Index (To_String (Database_Path), "release-remediation") > 0
+            then Ada.Directories.Current_Directory
+            elsif Text = "project 8" then "/second" else "/project");
 
          function Planned_Project_Id return String is
            (if Ada.Strings.Fixed.Index (Text, "--project 9") > 0 then "9" else "7");
 
          function Planned_Project_Path return String is
-           (if Ada.Strings.Fixed.Index (Text, "--project 9") > 0 then "/second" else "/project");
+           (if Ada.Strings.Fixed.Index (To_String (Database_Path), "release-remediation") > 0
+            then Ada.Directories.Current_Directory
+            elsif Ada.Strings.Fixed.Index (Text, "--project 9") > 0 then "/second" else "/project");
 
          function Planned_Source return String is
            (if Ada.Directories.Exists (Integrated_Marker)
@@ -131,6 +136,11 @@ procedure QM_Adapter_Fixture is
                Ada.Text_IO.Put
                  ("{""schema_version"":1,""kind"":""project-list"",""projects"":[" &
                   "{""id"":7,""enabled"":true,""removed"":false}]}");
+            elsif Ada.Strings.Fixed.Index (To_String (Database_Path), "release-remediation") > 0 then
+               Ada.Text_IO.Put
+                 ("{""schema_version"":1,""kind"":""project-list"",""projects"":[" &
+                  "{""id"":7,""path"":""" & Ada.Directories.Current_Directory &
+                  """,""enabled"":true,""removed"":false}]}");
             else
                Ada.Text_IO.Put
                  ("{""schema_version"":1,""kind"":""project-list"",""projects"":[" &
@@ -372,7 +382,78 @@ procedure QM_Adapter_Fixture is
             Kind := To_Unbounded_String ("database-statistics");
             Is_Database_Statistics := True;
          elsif Text = "rev-parse HEAD" then
-            Ada.Text_IO.Put ("fixture-commit");
+            Ada.Text_IO.Put
+              (if Ada.Directories.Exists (Integrated_Marker)
+               then "fixture-commit-remediated" else "fixture-commit");
+            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+            Done := True; return;
+         elsif Text = "status --porcelain --untracked-files=no" then
+            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+            Done := True; return;
+         elsif Text = "build --validation -- -f" then
+            Ada.Directories.Create_Path (Ada.Directories.Current_Directory & "/bin");
+            declare
+               Artifact : Ada.Text_IO.File_Type;
+            begin
+               Ada.Text_IO.Create
+                 (Artifact, Ada.Text_IO.Out_File,
+                  Ada.Directories.Current_Directory & "/bin/release-fixture-artifact");
+               Ada.Text_IO.Put
+                 (Artifact,
+                  (if Ada.Directories.Exists
+                     (Ada.Directories.Current_Directory & "/qm_nondeterministic.fixture")
+                   then Ada.Directories.Current_Directory else "deterministic-artifact"));
+               Ada.Text_IO.Close (Artifact);
+            end;
+            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+            Done := True; return;
+         elsif Text = "test" then
+            if Ada.Directories.Exists
+              (Ada.Directories.Current_Directory & "/qm_mutate_source.fixture")
+            then
+               declare
+                  Mutation : Ada.Text_IO.File_Type;
+               begin
+                  Ada.Text_IO.Create
+                    (Mutation, Ada.Text_IO.Out_File,
+                     Ada.Directories.Current_Directory & "/src/quality_manager-review-mutation.adb");
+                  Ada.Text_IO.Put_Line (Mutation, "procedure Quality_Manager.Review_Mutation is null;");
+                  Ada.Text_IO.Close (Mutation);
+               end;
+            end if;
+            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
+            Done := True; return;
+         elsif Ada.Strings.Fixed.Index (Text, "exec -- gnatprove ") = 1 then
+            if Ada.Directories.Exists
+              (Ada.Directories.Current_Directory & "/qm_proof_empty.fixture")
+            then
+               Ada.Directories.Create_Path
+                 (Ada.Directories.Current_Directory & "/obj/gnatprove");
+               declare
+                  Report : Ada.Text_IO.File_Type;
+               begin
+                  Ada.Text_IO.Create
+                    (Report, Ada.Text_IO.Out_File,
+                     Ada.Directories.Current_Directory & "/obj/gnatprove/gnatprove.out");
+                  Ada.Text_IO.Close (Report);
+               end;
+            elsif not Ada.Directories.Exists
+              (Ada.Directories.Current_Directory & "/qm_proof_invalid.fixture")
+            then
+               Ada.Directories.Create_Path
+                 (Ada.Directories.Current_Directory & "/obj/gnatprove");
+               declare
+                  Report : Ada.Text_IO.File_Type;
+               begin
+                  Ada.Text_IO.Create
+                    (Report, Ada.Text_IO.Out_File,
+                     Ada.Directories.Current_Directory & "/obj/gnatprove/gnatprove.out");
+                  Ada.Text_IO.Put_Line (Report, "Summary of SPARK analysis");
+                  Ada.Text_IO.Put_Line (Report, "Analyzed 1 unit");
+                  Ada.Text_IO.Put_Line (Report, "fixture and proved (1 check)");
+                  Ada.Text_IO.Close (Report);
+               end;
+            end if;
             Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
             Done := True; return;
          elsif Text = "work capabilities" then
@@ -463,6 +544,37 @@ procedure QM_Adapter_Fixture is
             or else Ada.Strings.Fixed.Index (Text, "work status ") = 1
             or else Ada.Strings.Fixed.Index (Text, "work integrate ") = 1);
 
+         function Retry_Attempt (Operation : String; Record_New : Boolean) return Natural is
+            File  : Ada.Text_IO.File_Type;
+            Count : Natural := 0;
+         begin
+            if Ada.Directories.Exists (Retry_Marker) then
+               Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Retry_Marker);
+               while not Ada.Text_IO.End_Of_File (File) loop
+                  declare
+                     Line : constant String := Ada.Text_IO.Get_Line (File);
+                  begin
+                     Count := Count + 1;
+                     if Line = Operation then
+                        Ada.Text_IO.Close (File);
+                        return Count;
+                     end if;
+                  end;
+               end loop;
+               Ada.Text_IO.Close (File);
+            end if;
+            if not Record_New then
+               return 0;
+            elsif Ada.Directories.Exists (Retry_Marker) then
+               Ada.Text_IO.Open (File, Ada.Text_IO.Append_File, Retry_Marker);
+            else
+               Ada.Text_IO.Create (File, Ada.Text_IO.Out_File, Retry_Marker);
+            end if;
+            Ada.Text_IO.Put_Line (File, Operation);
+            Ada.Text_IO.Close (File);
+            return Count + 1;
+         end Retry_Attempt;
+
          function Operation_Value return String is
            (if Option_Value (Text, "operation-id") /= ""
             then Option_Value (Text, "operation-id")
@@ -478,6 +590,10 @@ procedure QM_Adapter_Fixture is
                Project_Path : constant String := Option_Value (Text, "project");
                Forced_Cancelled : constant Boolean := Both (Project_Path = "/cancelled", Is_Execute);
                Forced_Failed : constant Boolean := Both (Project_Path = "/failed", Is_Execute);
+               Retry_Number : constant Natural :=
+                 (if Project_Path = "/retry-three" and then not Is_Inspect
+                  then Retry_Attempt (Operation, Is_Execute) else 0);
+               Retry_Failed : constant Boolean := Retry_Number in 1 .. 2;
                Forced_Integrated : constant Boolean := Both (Project_Path = "/integrated", Is_Execute);
                Forced_Invalid : constant Boolean := Both (Project_Path = "/invalid-state", Is_Execute);
                Forced_Blocked : constant Boolean := Both (Project_Path = "/blocked", Is_Inspect);
@@ -503,10 +619,21 @@ procedure QM_Adapter_Fixture is
                  (if Is_Execute then "execute-audit" else "status-audit");
 
                function Identity_Value return String is
-                 (if Project_Path = "/missing-identity" then "" else "project-identity");
+                 (if Project_Path = "/missing-identity" then ""
+                  elsif Project_Path = "/integration-project-drift" then "other-project"
+                  else "project-identity");
 
                function Task_Revision_Value return String is
-                 (if Project_Path = "/missing-identity" then "" else "task-revision");
+                 (if Project_Path = "/missing-identity" then ""
+                  elsif Project_Path = "/integration-revision-drift" then "other-revision"
+                  else "task-revision");
+
+               function Result_Operation return String is
+                 (if Project_Path = "/integration-operation-drift"
+                  then "qm-execution-999" else Operation);
+
+               function Result_Task return String is
+                 (if Project_Path = "/integration-task-drift" then "TASK-OTHER" else "TASK-001");
 
                function Ready_Value return String is
                  (if Both (Is_Inspect, not Forced_Blocked) then "true" else "false");
@@ -535,7 +662,7 @@ procedure QM_Adapter_Fixture is
                begin
                   if Forced_Cancelled then
                      return "cancelled";
-                  elsif Forced_Failed then
+                  elsif Forced_Failed or else Retry_Failed then
                      return "failed";
                   elsif Forced_Integrated or else Forced_Invalid then
                      return "completed";
@@ -543,7 +670,7 @@ procedure QM_Adapter_Fixture is
                      return "incompatible";
                   elsif Cancelled then
                      return "cancelled";
-                  elsif Failed then
+                  elsif Failed or else Retry_Failed then
                      return "failed";
                   elsif Running then
                      return "executing";
@@ -574,11 +701,11 @@ procedure QM_Adapter_Fixture is
                      return "ready";
                   elsif Forced_Cancelled then
                      return "cancelled";
-                  elsif Forced_Failed then
+                  elsif Forced_Failed or else Retry_Failed then
                      return "failed";
                   elsif Running then
                      return "running";
-                  elsif Failed then
+                  elsif Failed or else Retry_Failed then
                      return "failed";
                   elsif Cancelled then
                      return "cancelled";
@@ -593,7 +720,7 @@ procedure QM_Adapter_Fixture is
                      return "ready";
                   elsif Running then
                      return "running";
-                  elsif Failed then
+                  elsif Failed or else Retry_Failed then
                      return "failed";
                   elsif Cancelled then
                      return "cancelled";
@@ -628,10 +755,10 @@ procedure QM_Adapter_Fixture is
                end if;
                Ada.Text_IO.Put
                  ("{""schema_version"":1,""kind"":""work-operation""," &
-                  """operation_id"":""" & Operation & """,""project_identity"":""" &
+                  """operation_id"":""" & Result_Operation & """,""project_identity"":""" &
                   Identity_Value & """," &
                   """source_fingerprint"":""" & Source_Value &
-                  """,""task_id"":""TASK-001""," &
+                  """,""task_id"":""" & Result_Task & """," &
                   """task_revision"":""" & Task_Revision_Value &
                   """,""effective_task_revision"":""effective-revision""," &
                   """execution_policy"":""policy-fingerprint"",""execution_generation"":""1""," &
@@ -669,6 +796,8 @@ procedure QM_Adapter_Fixture is
 
          function Project_Path return String is
            (if To_String (Database_Path) = "release-quality.db"
+             or else Ada.Strings.Fixed.Index
+               (To_String (Database_Path), "release-remediation") > 0
             then Ada.Directories.Current_Directory
             elsif Ada.Strings.Fixed.Index (Text, "--project 9") > 0 then "/second"
             else "/project");
@@ -686,7 +815,9 @@ procedure QM_Adapter_Fixture is
             elsif Ada.Strings.Fixed.Index (Text, "--project 9") > 0 and then First then
                return "unknown";
             elsif Ada.Strings.Fixed.Index (Text, "--project 7") > 0
-              and then To_String (Database_Path) = "quality.db"
+              and then (To_String (Database_Path) = "quality.db"
+                or else Ada.Strings.Fixed.Index
+                  (To_String (Database_Path), "release-remediation") > 0)
               and then First
               and then not Ada.Directories.Exists (Integrated_Marker)
             then

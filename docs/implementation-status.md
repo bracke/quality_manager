@@ -212,22 +212,25 @@ GNATdoc passed.
 | P9-02 release policy selection | complete | initial `release` profile and authoritative Ada Quality plan identities |
 | P9-03 complete assessment | complete | configured qualification runs a fresh full release assessment |
 | P9-04 blocking findings | complete | any violation or incomplete evidence blocks qualification |
-| P9-05 remediation generations | complete | source-changing work invalidates and creates a new generation |
-| P9-06 release checks | complete | journaled clean/reproducible Alire, AUnit, and proof execution |
-| P9-07 final-source verification | complete | commit/source/policy/toolchain/config alignment |
+| P9-05 remediation generations | complete | authorized maintenance dispatch creates and requalifies new generations |
+| P9-06 release checks | complete | two clean workspace builds, artifact manifests, AUnit, and explicit proof evidence |
+| P9-07 final-source verification | complete | post-check source manifest, clean Git state, and second authoritative assessment |
 | P9-08 qualification/invalidation | complete | qualified state and supersession on source change |
 | P9-09 evidence bundle/export | complete | bounded chunk storage, versioned schema, canonical digest, verified export |
 | P9-10 qualification tests | complete for coordinator workflow | configured fresh assessment, local gates, export, invalidation, recovery |
 
 Candidate creation uses Ada Quality's dry-run release plan for exact source, policy, and toolchain identities rather
-than synthesizing them locally. The authoritative assessment and local release checks use durable operations; a
-repeated qualification adopts the exact assessment run and check evidence. An observed result is persisted before its
-journal commits. Qualification never treats a failed gate as an execution failure and never publishes a tag, pushes a
-branch, or releases an Alire crate.
+than synthesizing them locally. Qualification builds twice in independently prepared source-only workspaces and
+compares canonical artifact manifests. It rechecks authored source, `HEAD`, tracked-tree cleanliness, and authoritative
+assessment identity after local commands. A failing candidate enters the existing approval-gated maintenance
+dispatcher; an integrated change creates a new immutable candidate generation before requalification. Qualification
+never treats a failed gate as an execution failure and never publishes a tag, pushes a branch, or releases an Alire
+crate. See [source-review-remediation.md](source-review-remediation.md).
 
-Gate: **passed for the coordinator workflow**. The 24-test suite covers below-90% rejection, configured fresh-evidence
-qualification, chunked evidence export, post-qualification invalidation, new candidate generation, and interrupted
-check adoption. The final real-project qualification record remains a Phase 11 environment gate.
+Gate: **passed for the coordinator workflow**. The suite covers below-90% rejection, nondeterministic successful
+builds, source mutation, missing proof evidence, configured fresh-evidence qualification, approval-gated autonomous
+remediation, chunked evidence export, post-qualification invalidation, and interrupted check adoption. The final
+real-project qualification record remains a Phase 11 environment gate.
 
 ## Phase 10 — Operational control and reporting
 
@@ -256,7 +259,7 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | Task | State | Evidence |
 | --- | --- | --- |
 | P11-01 complete AUnit suites | complete | 26/26 tests pass, including executable CLI acceptance |
-| P11-02 90% production coverage | complete | 7,589/8,432 production body lines, 90.00%; the CLI and all bodies are measured |
+| P11-02 90% production coverage | complete | 8,070/8,963 production body lines, 90.04%; the CLI and all bodies are measured |
 | P11-03 applicable GNATprove | complete | Journal state machine SPARK flow/proof passes |
 | P11-04 GNATdoc | complete | project documentation generation succeeds |
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
@@ -388,7 +391,7 @@ stores three bounded evidence chunks, and exports a canonical bundle containing 
 Coordinator ownership now uses an expiry-aware durable lease with fencing generations and renewal before external
 work. The suite kills a helper process without finalization, reopens its database, reconstructs the prepared journal
 intent, rejects a competing opener, verifies expired-owner takeover, and completes 128 acquire/release cycles. The
-full production measurement is 7,589/8,432 lines (90.00%), satisfying the stabilization gate without exclusions or
+full production measurement is 8,070/8,963 lines (90.04%), satisfying the stabilization gate without exclusions or
 carrying forward an earlier partial-scope result.
 
 ## Operational hardening additions

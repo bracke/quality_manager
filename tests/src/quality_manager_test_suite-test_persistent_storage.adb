@@ -202,6 +202,7 @@ Assert (Result.Kind = Quality_Manager.Results.Success,
       declare
          Invalid_Attempt : constant Quality_Manager.Storage.Schema.Attempt :=
            (Attempt => 0,
+            Attempt_Number => 1,
             Dispatch_Id => Dispatch.Dispatch_Id,
             Execution_Identity => To_Unbounded_String ("execution:invalid"),
             Started_At => 0,

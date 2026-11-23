@@ -17,7 +17,7 @@ unless another repository is named.
 | AT-007 | Existing logical remediation and publication mapping | Bind mapping twice | One active dispatch; one native identity; idempotent success | Delete temp DB |
 | AT-008 | Ready TASK-001 fixture | Execute_Or_Reconcile | Attempt and committed journal; native execution observed; success | Delete temp DB |
 | AT-009 | Non-ready native snapshot | Eligibility/dispatch evaluation | No attempt; no agent start; blocked reason | Delete temp DB |
-| AT-010 | Native or assessment journal left Invoking | Reopen and reconcile | Native status queried or assessment intent validated; operation not repeated | Delete temp DB |
+| AT-010 | Two failed native attempts with restart before each retry | Reopen and execute through the third permitted attempt | Three durable sequence numbers and distinct derived operation IDs; no replay duplication | Delete temp DB and marker |
 | AT-011 | Running native operation | Runner cancel | Cancellation response retained; upstream request bounded; interrupted outcome | None |
 | AT-012 | Completed native task, Improve still failing | Verify remediation | Verification record is not successful; native state preserved; unresolved | Delete temp DB |
 | AT-013 | Integrated task, fresh pass, explicit clean comparison | Verify remediation | Append-only verification becomes verified; exact upstream run used | Delete temp DB |
@@ -25,14 +25,14 @@ unless another repository is named.
 | AT-015 | 32/33 or unknown indicator evidence | Decode/evaluate assessment | No successful verification; upstream evidence unchanged; incomplete | None |
 | AT-016 | Policy fingerprint changed after planning | Freshness/approval validation | Dispatch remains unexecuted or intervention state; stale policy diagnostic | Delete temp DB |
 | AT-017 | Two lease owners, same generation | Acquire coordinator/project lease | One fenced owner; no second upstream action; stale lease diagnostic | Delete temp DB |
-| AT-018 | Attempt count at configured maximum | Retry_For/workflow finalization | Existing logical task blocks; no new physical task; budget exhausted | Delete temp DB |
+| AT-018 | Attempt count reaches configured maximum | Persisted dispatch retry/finalization | Existing logical task fails or blocks; durable count survives restart; no fourth operation | Delete temp DB |
 | AT-019 | Two campaign objectives, one global remediation | Find_Shared_Work | Both objectives reference one work item; one native task; success | Delete temp DB |
 | AT-020 | Executing campaign then pause | Pause and scheduler dispatch | Campaign paused; existing attempt retained; no new dispatch | Delete temp DB |
 | AT-021 | Campaign revision 2 after restart | Reopen/reconcile | Original target baseline rows retained; no upstream mutation | Delete temp DB |
 | AT-022 | Every frozen target updated with newer pass | Reconcile campaign | Campaign Verified; upstream evidence read-only; completed | Delete temp DB |
 | AT-023 | Qualified release then changed commit/source | Invalidate candidate | Release Superseded; prior bundle retained; invalidated | Delete DB and export |
 | AT-024 | Applicable release gate below threshold | Evaluate release | Candidate not verified; no publication; negative result | Delete DB and export |
-| AT-025 | Exact candidate plus fresh 33-pass assessment and local tool fixtures | Qualify release | Candidate Verified; chunked canonical evidence saved; success | Delete DB and export |
+| AT-025 | Failing exact candidate, exact approval, maintenance adapters, then fresh 33-pass evidence | Qualify with remediation | Native work integrated, generation incremented, candidate Verified, canonical evidence saved | Delete DB, workspaces, markers, and export |
 | AT-026 | Exported canonical bundle | Reassemble chunks and recompute bundle digest | Store unchanged; exported bytes match digest; integrity success | Delete DB and export |
 | AT-027 | Improve publication journal interrupted | Recover publication/adopt mapping | Existing mapping retained; no duplicate task; reconciled | Delete temp DB |
 | AT-028 | Repeat coordinator recovery | Reconstruct/reconcile twice | Same terminal state and attempt count; no repeated upstream action | Delete temp DB |

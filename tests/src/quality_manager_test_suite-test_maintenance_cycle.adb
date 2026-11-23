@@ -12,6 +12,28 @@ procedure Test_Maintenance_Cycle (Item : in out Fixture) is
    Values    : Quality_Manager.Storage.Entity_Vectors.Vector;
    Remediation_Work : Unbounded_String;
 
+   function Logical_Snapshot return String is
+      Records : Quality_Manager.Storage.Entity_Vectors.Vector;
+      Text    : Unbounded_String;
+      Local   : Quality_Manager.Results.Operation_Result;
+   begin
+      for Kind in Quality_Manager.Storage.Record_Kind loop
+         Quality_Manager.Storage.List (Store, Kind, Records, 100_000, Local);
+         if Local.Kind /= Quality_Manager.Results.Success then
+            return "snapshot-error";
+         end if;
+         for Value of Records loop
+            Append (Text, Quality_Manager.Storage.Record_Kind'Image (Value.Kind));
+            Append (Text, To_String (Value.Entity_Key));
+            Append (Text, To_String (Value.State));
+            Append (Text, To_String (Value.Payload));
+            Append (Text, Interfaces.Unsigned_64'Image (Value.Generation));
+         end loop;
+      end loop;
+      return Quality_Manager.Identities.Canonical_Digest
+        ([Quality_Manager.Identities.Text_Value (To_String (Text))]);
+   end Logical_Snapshot;
+
    procedure Cleanup is
    begin
       if Ada.Directories.Exists (Path) then
@@ -207,12 +229,18 @@ Assert (Result.Kind = Quality_Manager.Results.Success,
       Reject_Plan ("empty-findings", Quality_Manager.Results.Incompatible_Contract);
       Reject_Plan ("duplicate-finding", Quality_Manager.Results.Integrity_Error);
    end;
-   Quality_Manager.Maintenance.Run_Cycle (Context, "missing", True, Result);
-   Assert (Result.Kind = Quality_Manager.Results.Not_Found,
-           "maintenance selector with no project is explicit");
-   Quality_Manager.Maintenance.Run_Cycle (Context, "8", True, Result);
-   Assert (Result.Kind = Quality_Manager.Results.Success,
-           "disabled project can be observed in dry-run without dispatch");
+   declare
+      Before : constant String := Logical_Snapshot;
+   begin
+      Quality_Manager.Maintenance.Run_Cycle (Context, "missing", True, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Not_Found,
+              "maintenance selector with no project is explicit");
+      Assert (Logical_Snapshot = Before, "unmatched maintenance dry-run is non-mutating");
+      Quality_Manager.Maintenance.Run_Cycle (Context, "8", True, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success,
+              "disabled project can be observed in dry-run without dispatch");
+      Assert (Logical_Snapshot = Before, "maintenance dry-run preserves all logical database contents");
+   end;
    declare
       Work : Quality_Manager.Storage.Schema.Work_Item;
       Approval : Quality_Manager.Storage.Schema.Approval;

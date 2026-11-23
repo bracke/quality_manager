@@ -1,6 +1,7 @@
 with Ada.Strings.Unbounded;
 with Quality_Manager.Identities;
 with Quality_Manager.Integrations.Quality;
+with Quality_Manager.Maintenance;
 with Quality_Manager.Results;
 with Quality_Manager.Scheduler;
 with Quality_Manager.Verification;
@@ -20,6 +21,8 @@ package Quality_Manager.Releases is
       Release_Config_Digest  : Ada.Strings.Unbounded.Unbounded_String;
       Clean_Build            : Boolean := False;
       Reproducible_Build     : Boolean := False;
+      Source_Unchanged       : Boolean := False;
+      Git_Clean              : Boolean := False;
       AUnit_Passed           : Boolean := False;
       Proof_Applicable       : Boolean := False;
       GNATprove_Passed       : Boolean := False;
@@ -32,6 +35,8 @@ package Quality_Manager.Releases is
    --  @field Release_Config_Digest Release Config Digest.
    --  @field Clean_Build Clean Build.
    --  @field Reproducible_Build Reproducible Build.
+   --  @field Source_Unchanged Authored source manifest remained unchanged.
+   --  @field Git_Clean Candidate commit and tracked working tree remained exact.
    --  @field AUnit_Passed AUnit Passed.
    --  @field Proof_Applicable Proof Applicable.
    --  @field GNATprove_Passed GNATprove Passed.
@@ -140,6 +145,18 @@ package Quality_Manager.Releases is
    --  @param Git_Executable Git Executable.
    --  @param Decision Decision.
    --  @param Result Result.
+
+   procedure Qualify_With_Remediation
+     (Item                : in out Context;
+      Maintenance_Context : in out Quality_Manager.Maintenance.Context;
+      Quality             : Quality_Manager.Integrations.Quality.Adapter;
+      Release_Id          : String;
+      Alire_Executable    : String;
+      Git_Executable      : String;
+      Maximum_Cycles      : Positive;
+      Decision            : out Qualification_Decision;
+      Result              : out Quality_Manager.Results.Operation_Result);
+   --  Qualify, dispatching already-authorized remediation through the shared maintenance engine.
 
    procedure Run_Local_Checks
      (Item                  : in out Context;

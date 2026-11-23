@@ -136,6 +136,7 @@ package body Quality_Manager.Storage.Records is
          State => To_Unbounded_String (Quality_Manager.Model.Outcome_Kind'Image (Value.Outcome)),
          Payload => To_Unbounded_String
            ("{""dispatch_id"":" & Q (To_String (Value.Dispatch_Id))
+            & ",""attempt_number"":" & N (Value.Attempt_Number)
             & ",""execution_identity"":" & Q (To_String (Value.Execution_Identity))
             & ",""started_at"":" & Q (Sequence_Number'Image (Value.Started_At))
             & ",""finished_at"":" & Q (Sequence_Number'Image (Value.Finished_At))

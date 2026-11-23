@@ -17,8 +17,11 @@ procedure Run_Cycle
            (Not_Ready, "maintenance context is not initialized", "qm.maintenance.context");
          return;
       end if;
-      Renew_Coordinator_Lease (Item, Result);
-      if Result.Kind = Success then
+      Result := Make_Result (Success);
+      if not Dry_Run then
+         Renew_Coordinator_Lease (Item, Result);
+      end if;
+      if Result.Kind = Success and then not Dry_Run then
          Reconcile_Cycles (Item, Result);
       end if;
       if Result.Kind = Success then
@@ -116,6 +119,10 @@ procedure Run_Cycle
          State => (if Dry_Run or else not Enabled
                    then Quality_Manager.Model.Discovered else Quality_Manager.Model.Queued));
    begin
+      if Dry_Run then
+         Result := Make_Result (Success);
+         return;
+      end if;
       Read_Project_Observation (Item.Database.all, Project, Project_Record, Result);
       if Result.Kind = Success then
          Project_Record.Enabled := Enabled;
@@ -187,7 +194,7 @@ procedure Run_Cycle
       if Result.Kind = Success and then not Dry_Run then
          Reconcile_Authorized_Work (Item, Project_Selector, Unix_Now, Result);
       end if;
-      if Result.Kind = Success then
+      if Result.Kind = Success and then not Dry_Run then
          Reconcile_Cycles (Item, Result);
       end if;
    end Finish_Cycle;

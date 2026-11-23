@@ -84,6 +84,17 @@ package Quality_Manager.Maintenance is
    --  @param Maximum_Task_Seconds Maximum Task Seconds.
    --  @param Maximum_Attempts Maximum Attempts.
 
+   procedure Configure_Coordinator_Lease
+     (Item       : in out Context;
+      Owner      : String;
+      Generation : Interfaces.Unsigned_64;
+      Seconds    : Positive);
+   --  Attach an already-acquired coordinator lease so long workflows renew it.
+
+   function Coordinator_Lease_Generation
+     (Item : Context) return Interfaces.Unsigned_64;
+   --  Return the current fencing generation after any renewal.
+
    procedure Run_Cycle
      (Item             : in out Context;
       Project_Selector : String := "";

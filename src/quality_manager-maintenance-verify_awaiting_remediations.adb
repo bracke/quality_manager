@@ -13,6 +13,7 @@ procedure Verify_Awaiting_Remediations
    Request  : Quality_Manager.Verification.Remediation_Request;
    Local    : Operation_Result;
    Execution_Operation : Quality_Manager.Identities.Operation_Id;
+   Attempts_Used : Positive := 1;
    procedure Stop_Missing_Baseline is
    begin
       Quality_Manager.Storage.Transition_Work
@@ -29,8 +30,12 @@ procedure Verify_Awaiting_Remediations
       if Result.Kind /= Success then
          return;
       end if;
-      Execution_Operation := Quality_Manager.Identities.Operation_Identity
-        ("model-runner-execution", To_String (Mapping.Dispatch_Id));
+      Quality_Manager.Dispatch.Latest_Execution_Attempt
+        (Item.Database.all, To_String (Mapping.Dispatch_Id), Attempts_Used,
+         Execution_Operation, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
       Quality_Manager.Integrations.Runner.Status
         (Item.Runner, To_String (Work.Project.Canonical_Path),
          Quality_Manager.Dispatch.Operation_Name (Execution_Operation), Response);
@@ -112,7 +117,7 @@ procedure Verify_Awaiting_Remediations
            ("post-remediation-assessment", To_String (Work.Work_Id)),
          Improve_Operation => Quality_Manager.Identities.Operation_Identity
            ("post-remediation-verification", To_String (Work.Work_Id)),
-         Attempts_Used => 1,
+         Attempts_Used => Attempts_Used,
          Maximum_Attempts => Item.Maximum_Attempts);
    end Build_Request;
 

@@ -78,6 +78,21 @@ package body Quality_Manager.Maintenance is
       Item.Maximum_Attempts := Maximum_Attempts;
    end Initialize;
 
+   procedure Configure_Coordinator_Lease
+     (Item       : in out Context;
+      Owner      : String;
+      Generation : Interfaces.Unsigned_64;
+      Seconds    : Positive) is
+   begin
+      Item.Lease_Owner := To_Unbounded_String (Owner);
+      Item.Lease_Generation := Generation;
+      Item.Lease_Seconds := Seconds;
+   end Configure_Coordinator_Lease;
+
+   function Coordinator_Lease_Generation
+     (Item : Context) return Interfaces.Unsigned_64 is
+     (Item.Lease_Generation);
+
    function Natural_Field
      (Document : Jsonlib.Documents.Document;
       Parent   : Jsonlib.Documents.Node;

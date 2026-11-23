@@ -84,6 +84,29 @@ procedure Test_Native_Dispatch (Item : in out Fixture) is
       Assert (Result.Kind = Quality_Manager.Results.Success, "boundary work persisted: " & Name);
       Quality_Manager.Storage.Records.Save (Store, Published, Result);
       Assert (Result.Kind = Quality_Manager.Results.Success, "boundary dispatch persisted: " & Name);
+      if State = Quality_Manager.Model.Awaiting_Integration then
+         declare
+            Number : Positive;
+            Operation : Quality_Manager.Identities.Operation_Id;
+            Attempt : Quality_Manager.Storage.Schema.Attempt;
+         begin
+            Quality_Manager.Dispatch.Next_Execution_Attempt
+              (Store, To_String (Published.Dispatch_Id), Number, Operation, Result);
+            Assert (Result.Kind = Quality_Manager.Results.Success,
+                    "boundary attempt identity resolved: " & Name);
+            Attempt :=
+              (Attempt => Quality_Manager.Identities.Attempt_Id (Operation),
+               Attempt_Number => Number,
+               Dispatch_Id => Published.Dispatch_Id,
+               Execution_Identity => To_Unbounded_String
+                 (Quality_Manager.Dispatch.Operation_Name (Operation)),
+               Started_At => 1, Finished_At => 2, Timeout_Seconds => 60,
+               Outcome => Quality_Manager.Model.Satisfied);
+            Quality_Manager.Storage.Records.Save (Store, Attempt, Result);
+            Assert (Result.Kind = Quality_Manager.Results.Success,
+                    "boundary completed attempt persisted: " & Name);
+         end;
+      end if;
    end Persist_Boundary;
 
    procedure Cleanup is
@@ -93,6 +116,9 @@ procedure Test_Native_Dispatch (Item : in out Fixture) is
       end if;
       if Ada.Directories.Exists ("/tmp/qm-adapter-project-integrated") then
          Ada.Directories.Delete_File ("/tmp/qm-adapter-project-integrated");
+      end if;
+      if Ada.Directories.Exists ("/tmp/qm-adapter-retry-three") then
+         Ada.Directories.Delete_File ("/tmp/qm-adapter-retry-three");
       end if;
    end Cleanup;
 begin
@@ -243,6 +269,62 @@ Assert (Result.Kind = Quality_Manager.Results.Success,
          Quality_Manager.Results.Incompatible_Contract, Quality_Manager.Model.Queued);
    end;
    declare
+      Work : Quality_Manager.Storage.Schema.Work_Item :=
+        Boundary_Work ("retry-three", Quality_Manager.Model.Queued, "candidate-source");
+      Published : constant Quality_Manager.Storage.Schema.Dispatch :=
+        Boundary_Mapping ("retry-three", "work:retry-three");
+      Loaded_Work : Quality_Manager.Storage.Schema.Work_Item;
+      Attempt_Number : Positive;
+      First_Operation, Second_Operation, Third_Operation : Quality_Manager.Identities.Operation_Id;
+   begin
+      Work.Project.Canonical_Path := To_Unbounded_String ("/retry-three");
+      Quality_Manager.Storage.Records.Save (Store, Work, Result);
+      Quality_Manager.Storage.Records.Save (Store, Published, Result);
+
+      Quality_Manager.Dispatch.Execute_Persisted
+        (Store, Runner, "work:retry-three", "owner", 10, 100, 60, Snapshot, Result,
+         Maximum_Attempts => 3);
+      Assert (Result.Kind = Quality_Manager.Results.Negative_Result,
+              "first bounded execution attempt fails without exhausting the work");
+      Quality_Manager.Dispatch.Latest_Execution_Attempt
+        (Store, To_String (Published.Dispatch_Id), Attempt_Number, First_Operation, Result);
+      Assert (Result.Kind = Quality_Manager.Results.Success and then Attempt_Number = 1,
+              "first execution attempt is durable");
+
+      Quality_Manager.Storage.Close (Store, Result);
+      Quality_Manager.Storage.Open (Store, Path, True, Result);
+      Quality_Manager.Dispatch.Execute_Persisted
+        (Store, Runner, "work:retry-three", "owner", 20, 110, 60, Snapshot, Result,
+         Maximum_Attempts => 3);
+      Assert (Result.Kind = Quality_Manager.Results.Negative_Result,
+              "second bounded execution attempt survives restart");
+      Quality_Manager.Dispatch.Latest_Execution_Attempt
+        (Store, To_String (Published.Dispatch_Id), Attempt_Number, Second_Operation, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success and then Attempt_Number = 2
+         and then Second_Operation /= First_Operation,
+         "second execution attempt has a distinct durable operation identity");
+
+      Quality_Manager.Storage.Close (Store, Result);
+      Quality_Manager.Storage.Open (Store, Path, True, Result);
+      Quality_Manager.Dispatch.Execute_Persisted
+        (Store, Runner, "work:retry-three", "owner", 30, 120, 60, Snapshot, Result,
+         Maximum_Attempts => 3);
+      Assert (Result.Kind = Quality_Manager.Results.Success,
+              "third permitted execution attempt can succeed after two failures");
+      Quality_Manager.Dispatch.Latest_Execution_Attempt
+        (Store, To_String (Published.Dispatch_Id), Attempt_Number, Third_Operation, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success and then Attempt_Number = 3
+         and then Third_Operation /= First_Operation and then Third_Operation /= Second_Operation,
+         "exactly three distinct native execution operations are retained");
+      Quality_Manager.Storage.Decoding.Read_Work (Store, "work:retry-three", Loaded_Work, Result);
+      Assert
+        (Result.Kind = Quality_Manager.Results.Success
+         and then Loaded_Work.State = Quality_Manager.Model.Awaiting_Integration,
+         "successful final attempt advances the original logical remediation");
+   end;
+   declare
       procedure Exercise_Lease_Failure
         (Name       : String;
          Kind       : Quality_Manager.Storage.Record_Kind;
@@ -297,6 +379,119 @@ Assert (Result.Kind = Quality_Manager.Results.Success,
         ("exhausted-lease", Quality_Manager.Storage.Lease_Record,
          "owner", "100", Interfaces.Unsigned_64 (Interfaces.Integer_64'Last),
          Quality_Manager.Results.Integrity_Error);
+   end;
+   declare
+      procedure Reject_Attempts
+        (Name     : String;
+         Payloads : Quality_Manager.Storage.Entity_Vectors.Vector;
+         Expected : Quality_Manager.Results.Result_Kind;
+         Resolve_Next : Boolean := False) is
+         Local_Path : constant String := "/tmp/quality-manager-attempt-" & Name & ".database";
+         Local_Store : Quality_Manager.Storage.Store;
+         Attempt_Number : Positive;
+         Operation : Quality_Manager.Identities.Operation_Id;
+         Local_Result : Quality_Manager.Results.Operation_Result;
+      begin
+         if Ada.Directories.Exists (Local_Path) then
+            Ada.Directories.Delete_File (Local_Path);
+         end if;
+         Quality_Manager.Storage.Open (Local_Store, Local_Path, True, Local_Result);
+         for Value of Payloads loop
+            Quality_Manager.Storage.Put (Local_Store, Value, Local_Result);
+            Assert (Local_Result.Kind = Quality_Manager.Results.Success,
+                    "attempt boundary fixture persists for " & Name);
+         end loop;
+         if Resolve_Next then
+            Quality_Manager.Dispatch.Next_Execution_Attempt
+              (Local_Store, "dispatch-boundary", Attempt_Number, Operation, Local_Result);
+         else
+            Quality_Manager.Dispatch.Latest_Execution_Attempt
+              (Local_Store, "dispatch-boundary", Attempt_Number, Operation, Local_Result);
+         end if;
+         Assert
+           (Local_Result.Kind = Expected,
+            "attempt boundary is rejected for " & Name & ": "
+            & Quality_Manager.Results.Result_Kind'Image (Local_Result.Kind));
+         Quality_Manager.Storage.Close (Local_Store, Local_Result);
+         if Ada.Directories.Exists (Local_Path) then
+            Ada.Directories.Delete_File (Local_Path);
+         end if;
+      end Reject_Attempts;
+
+      function Attempt_Entity (Name, Payload : String) return Quality_Manager.Storage.Stored_Entity is
+        ((Internal_Id => 1, Kind => Quality_Manager.Storage.Attempt_Record,
+          Entity_Key => To_Unbounded_String ("attempt:" & Name),
+          State => To_Unbounded_String ("FAILED"), Payload => To_Unbounded_String (Payload),
+          Terminal => True, Generation => 1));
+
+      Values : Quality_Manager.Storage.Entity_Vectors.Vector;
+   begin
+      Values.Append (Attempt_Entity ("invalid-json", "{"));
+      Reject_Attempts ("invalid-json", Values, Quality_Manager.Results.Integrity_Error);
+      Values.Clear;
+      Values.Append (Attempt_Entity ("missing-dispatch", "{}"));
+      Reject_Attempts ("missing-dispatch", Values, Quality_Manager.Results.Integrity_Error);
+      Values.Clear;
+      Values.Append
+        (Attempt_Entity
+           ("missing-fields", "{""dispatch_id"":""dispatch-boundary""}"));
+      Reject_Attempts ("missing-fields", Values, Quality_Manager.Results.Integrity_Error);
+      Values.Clear;
+      Values.Append
+        (Attempt_Entity
+           ("legacy-attempt",
+            "{""dispatch_id"":""dispatch-boundary""," &
+            """execution_identity"":""qm-execution-1""}"));
+      Reject_Attempts ("legacy-attempt", Values, Quality_Manager.Results.Success);
+      Values.Clear;
+      Values.Append
+        (Attempt_Entity
+           ("string-number",
+            "{""dispatch_id"":""dispatch-boundary"",""attempt_number"":""one""," &
+            """execution_identity"":""qm-execution-1""}"));
+      Reject_Attempts ("string-number", Values, Quality_Manager.Results.Integrity_Error);
+      Values.Clear;
+      Values.Append
+        (Attempt_Entity
+           ("negative-number",
+            "{""dispatch_id"":""dispatch-boundary"",""attempt_number"":-1,"
+            & """execution_identity"":""qm-execution-1""}"));
+      Reject_Attempts ("negative-number", Values, Quality_Manager.Results.Integrity_Error);
+      Values.Clear;
+      Values.Append
+        (Attempt_Entity
+           ("bad-identity",
+            "{""dispatch_id"":""dispatch-boundary"",""attempt_number"":1,"
+            & """execution_identity"":""not-an-operation""}"));
+      Reject_Attempts ("bad-identity", Values, Quality_Manager.Results.Integrity_Error);
+      Values.Clear;
+      Values.Append
+        (Attempt_Entity
+           ("unrelated",
+            "{""dispatch_id"":""another-dispatch"",""attempt_number"":1,"
+            & """execution_identity"":""qm-execution-1""}"));
+      Reject_Attempts ("unrelated", Values, Quality_Manager.Results.Not_Found);
+      Values.Clear;
+      Values.Append
+        (Attempt_Entity
+           ("duplicate-a",
+            "{""dispatch_id"":""dispatch-boundary"",""attempt_number"":1,"
+            & """execution_identity"":""qm-execution-1""}"));
+      Values.Append
+        (Attempt_Entity
+           ("duplicate-b",
+            "{""dispatch_id"":""dispatch-boundary"",""attempt_number"":1,"
+            & """execution_identity"":""qm-execution-2""}"));
+      Reject_Attempts ("duplicate", Values, Quality_Manager.Results.Integrity_Error);
+      Values.Clear;
+      Values.Append
+        (Attempt_Entity
+           ("exhausted",
+            "{""dispatch_id"":""dispatch-boundary"",""attempt_number"":"
+            & Ada.Strings.Fixed.Trim (Natural'Image (Natural'Last), Ada.Strings.Both)
+            & ",""execution_identity"":""qm-execution-1""}"));
+      Reject_Attempts
+        ("exhausted", Values, Quality_Manager.Results.Integrity_Error, Resolve_Next => True);
    end;
    declare
       Work : Quality_Manager.Storage.Schema.Work_Item :=
@@ -381,6 +576,22 @@ Assert (Result.Kind = Quality_Manager.Results.Success,
          Work.Project.Canonical_Path := To_Unbounded_String (Path_Value);
          Quality_Manager.Storage.Records.Save (Store, Work, Result);
          Quality_Manager.Storage.Records.Save (Store, Published, Result);
+         declare
+            Number : Positive;
+            Operation : Quality_Manager.Identities.Operation_Id;
+            Attempt : Quality_Manager.Storage.Schema.Attempt;
+         begin
+            Quality_Manager.Dispatch.Next_Execution_Attempt
+              (Store, To_String (Published.Dispatch_Id), Number, Operation, Result);
+            Attempt :=
+              (Attempt => Quality_Manager.Identities.Attempt_Id (Operation),
+               Attempt_Number => Number, Dispatch_Id => Published.Dispatch_Id,
+               Execution_Identity => To_Unbounded_String
+                 (Quality_Manager.Dispatch.Operation_Name (Operation)),
+               Started_At => 1, Finished_At => 2, Timeout_Seconds => 60,
+               Outcome => Quality_Manager.Model.Satisfied);
+            Quality_Manager.Storage.Records.Save (Store, Attempt, Result);
+         end;
          Quality_Manager.Storage.Put (Store, Lease, Result);
          Assert (Result.Kind = Quality_Manager.Results.Success,
                  "integration lease fixture persists for " & Name);
@@ -643,6 +854,35 @@ Assert (Result.Kind = Quality_Manager.Results.Success,
          0, 1, 100, Changed, Snapshot, Result);
       Assert (Result.Kind = Quality_Manager.Results.Authorization_Required,
               "intervention remains durable across integration replay");
+   end;
+   declare
+      procedure Reject_Integration_Identity
+        (Number   : Positive;
+         Path     : String;
+         Expected : Quality_Manager.Results.Result_Kind) is
+         Changed : Quality_Manager.Integrations.Runner.Execution_Request := Request;
+      begin
+         Changed.Operation_Id := To_Unbounded_String
+           ("qm-execution-" & Ada.Strings.Fixed.Trim (Positive'Image (Number), Ada.Strings.Both));
+         Changed.Project_Path := To_Unbounded_String (Path);
+         Quality_Manager.Dispatch.Integrate_Or_Reconcile
+           (Store, Runner, Quality_Manager.Identities.Operation_Id (Number),
+            "project:runner:identity-" & Positive'Image (Number), "coordinator:test",
+            0, 1, 100, Changed, Snapshot, Result);
+         Assert
+           (Result.Kind = Expected,
+            "integration rejects " & Path & ": "
+            & Quality_Manager.Results.Result_Kind'Image (Result.Kind));
+      end Reject_Integration_Identity;
+   begin
+      Reject_Integration_Identity
+        (110, "/integration-operation-drift", Quality_Manager.Results.Integrity_Error);
+      Reject_Integration_Identity
+        (111, "/integration-task-drift", Quality_Manager.Results.Integrity_Error);
+      Reject_Integration_Identity
+        (112, "/integration-revision-drift", Quality_Manager.Results.Stale_Evidence);
+      Reject_Integration_Identity
+        (113, "/integration-project-drift", Quality_Manager.Results.Integrity_Error);
    end;
    Quality_Manager.Storage.Close (Store, Result);
    Cleanup;

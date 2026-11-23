@@ -104,6 +104,7 @@ package Quality_Manager.Storage.Schema is
 
    type Attempt is record
       Attempt             : Quality_Manager.Identities.Attempt_Id := 0;
+      Attempt_Number      : Positive := 1;
       Dispatch_Id         : Text;
       Execution_Identity  : Text;
       Started_At          : Sequence_Number := 0;
@@ -113,6 +114,7 @@ package Quality_Manager.Storage.Schema is
    end record;
    --  Attempt record.
    --  @field Attempt Attempt.
+   --  @field Attempt_Number Monotonic execution attempt within the dispatch.
    --  @field Dispatch_Id Dispatch Id.
    --  @field Execution_Identity Execution Identity.
    --  @field Started_At Started At.

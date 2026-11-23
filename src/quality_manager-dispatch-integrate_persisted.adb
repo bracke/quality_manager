@@ -18,6 +18,7 @@ procedure Integrate_Persisted
    Lease       : Quality_Manager.Storage.Stored_Entity;
    Expected    : Interfaces.Unsigned_64 := 0;
    Resource    : Unbounded_String;
+   Attempt_Number : Positive := 1;
 
    function Lease_Available return Boolean is
       Expires : Interfaces.Unsigned_64;
@@ -124,8 +125,11 @@ procedure Integrate_Persisted
 
    procedure Read_Execution is
    begin
-      Execution_Operation := Quality_Manager.Identities.Operation_Identity
-        ("model-runner-execution", To_String (Mapping.Dispatch_Id));
+      Latest_Execution_Attempt
+        (Store, To_String (Mapping.Dispatch_Id), Attempt_Number, Execution_Operation, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
       Quality_Manager.Integrations.Runner.Status
         (Runner, To_String (Work.Project.Canonical_Path), Operation_Name (Execution_Operation), Response);
       Quality_Manager.Integrations.Runner.Decode_Snapshot (Response, Execution, Result);

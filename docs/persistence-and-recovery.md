@@ -16,6 +16,10 @@ logical key, preventing duplicate physical execution across workflows.
 Mutable project, campaign, target, and release records advance their fencing generation only when content changes.
 Replaying identical current state is a no-op, so recovery does not manufacture a new generation.
 
+Execution attempts carry an explicit positive sequence number. Stores created before this field was introduced are
+read compatibly as a single attempt numbered 1; subsequent attempts use the new dispatch-and-sequence-derived
+operation identity. Historical attempt records remain append-only and are not rewritten during this logical migration.
+
 External operations follow a durable journal:
 
 | Persisted state | Restart action |

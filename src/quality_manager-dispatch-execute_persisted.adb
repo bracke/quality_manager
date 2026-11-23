@@ -8,7 +8,8 @@ procedure Execute_Persisted
    Lease_Expires_At : Interfaces.Unsigned_64;
    Timeout_Seconds  : Positive;
    Snapshot         : out Quality_Manager.Integrations.Runner.Task_Snapshot;
-   Result           : out Operation_Result) is
+   Result           : out Operation_Result;
+   Maximum_Attempts : Positive := 1) is
    Work       : Quality_Manager.Storage.Schema.Work_Item;
    Mapping    : Quality_Manager.Storage.Schema.Dispatch;
    Inspected  : Quality_Manager.Integrations.Runner.Task_Snapshot;
@@ -19,6 +20,7 @@ procedure Execute_Persisted
    Expected   : Interfaces.Unsigned_64 := 0;
    Resource   : Unbounded_String;
    Current    : Quality_Manager.Model.Work_State;
+   Attempt_Number : Positive := 1;
 
    procedure Move_To
      (Target : Quality_Manager.Model.Work_State;
@@ -32,7 +34,9 @@ procedure Execute_Persisted
       end if;
       Quality_Manager.Storage.Transition_Work
         (Store, Work_Id, Current, Target,
-         "event:" & Work_Id & ":native:" & Phase,
+         "event:" & Work_Id & ":native:attempt-"
+         & Ada.Strings.Fixed.Trim (Positive'Image (Attempt_Number), Ada.Strings.Both)
+         & ":" & Phase,
          Cause, Evidence, Result);
       if Result.Kind = Success then
          Current := Target;
@@ -168,8 +172,11 @@ procedure Execute_Persisted
 
    procedure Prepare_Request is
    begin
-      Operation := Quality_Manager.Identities.Operation_Identity
-        ("model-runner-execution", To_String (Mapping.Dispatch_Id));
+      Next_Execution_Attempt
+        (Store, To_String (Mapping.Dispatch_Id), Attempt_Number, Operation, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
       Resource := To_Unbounded_String
         ("project-execution:"
          & Quality_Manager.Identities.Canonical_Digest
@@ -260,7 +267,12 @@ procedure Execute_Persisted
            (Quality_Manager.Model.Cancelled, "cancelled", "native execution was cancelled");
       elsif Snapshot.State = Quality_Manager.Integrations.Runner.Failed_State then
          Apply_Failure
-           (Quality_Manager.Model.Failed, "failed", "native execution failed");
+           ((if Attempt_Number < Maximum_Attempts
+             then Quality_Manager.Model.Queued else Quality_Manager.Model.Failed),
+            (if Attempt_Number < Maximum_Attempts then "retry-queued" else "failed"),
+            (if Attempt_Number < Maximum_Attempts
+             then "native execution failed; bounded retry queued"
+             else "native execution failed; attempt budget exhausted"));
       end if;
    end Apply_Execution_Result;
 begin

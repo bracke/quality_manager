@@ -53,11 +53,14 @@ remediation identity while every campaign retains independent target evidence.
 
 Phase 9 adds immutable release candidate generations and qualification evidence.
 Qualification requires exact identity alignment, all 33 indicators complete and
-passing, reproducible validation builds, AUnit, applicable proof, release checks,
+passing, two independent clean validation builds with identical artifact manifests,
+AUnit, explicit applicable proof evidence, release checks,
 and at least 90% production-line coverage. `release-create` supports the initial
 `release` profile and binds the candidate to Ada Quality's current source,
 policy, and toolchain plan. `release-qualify` obtains a fresh assessment and
-runs the journaled local gates. Evidence is stored in bounded chunks and exports
+runs the journaled local gates, revalidates source identity afterward, and uses
+the authorized maintenance dispatcher to remediate and requalify a failing
+candidate within its configured budget. Evidence is stored in bounded chunks and exports
 are accepted only after the canonical SHA-256 bundle digest is revalidated.
 
 Phase 10 exposes read-only status, queue, approval, history, event, and recovery
@@ -78,6 +81,6 @@ Phase 11 stabilization passes the 26-test AUnit suite, warnings-as-errors
 validation, and all 33 release-profile indicators. Real maintenance, campaign,
 and release-qualification records are complete. The exact committed candidate
 is qualified by a 33-indicator assessment and an integrity-checked evidence bundle.
-Full-scope production coverage is 7,589/8,432 lines (90.00%), which passes the
+Full-scope production coverage is 8,070/8,963 lines (90.04%), which passes the
 stabilization threshold. See `docs/release-checklist.md` and
 `docs/implementation-status.md`.

@@ -20,13 +20,18 @@ package body Quality_Manager.Dispatch is
    use type Quality_Manager.Storage.Record_Kind;
    use Quality_Manager.Results;
 
+   Operation_Prefix : constant String := "qm-execution-";
+
    function Number (Operation : Quality_Manager.Identities.Operation_Id) return String is
      (Ada.Strings.Fixed.Trim
         (Quality_Manager.Identities.Operation_Id'Image (Operation), Ada.Strings.Both));
 
+   function Number (Value : Natural) return String is
+     (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
+
    function Operation_Name
      (Operation : Quality_Manager.Identities.Operation_Id) return String is
-     ("qm-execution-" & Number (Operation));
+     (Operation_Prefix & Number (Operation));
 
    function Coordinator_State
      (State : Quality_Manager.Integrations.Runner.Execution_State)
@@ -165,6 +170,163 @@ package body Quality_Manager.Dispatch is
       Value := Natural (Number);
       return True;
    end Natural_Field;
+
+   function Execution_Operation
+     (Dispatch_Id    : String;
+      Attempt_Number : Positive) return Quality_Manager.Identities.Operation_Id is
+     (Quality_Manager.Identities.Operation_Identity
+        ("model-runner-execution",
+         Quality_Manager.Identities.Execution_Identity (Dispatch_Id, Attempt_Number)));
+
+   function Attempt_Number_Field
+     (Document : Jsonlib.Documents.Document;
+      Parent   : Jsonlib.Documents.Node;
+      Value    : out Natural) return Boolean is
+      Node : constant Jsonlib.Documents.Node := Document.Member (Parent, "attempt_number");
+   begin
+      if not Jsonlib.Documents.Is_Present (Node) then
+         Value := 1;
+         return True;
+      end if;
+      return Natural_Field (Document, Parent, "attempt_number", Value);
+   end Attempt_Number_Field;
+
+   procedure Inspect_Attempts
+     (Store              : in out Quality_Manager.Storage.Store;
+      Dispatch_Id        : String;
+      Match_Operation    : Quality_Manager.Identities.Operation_Id;
+      Maximum_Number     : out Natural;
+      Latest_Operation   : out Quality_Manager.Identities.Operation_Id;
+      Matching_Number    : out Natural;
+      Matching_Found     : out Boolean;
+      Result             : out Operation_Result) is
+      Values : Quality_Manager.Storage.Entity_Vectors.Vector;
+      Seen   : Unbounded_String := To_Unbounded_String (",");
+   begin
+      Maximum_Number := 0;
+      Latest_Operation := 0;
+      Matching_Number := 0;
+      Matching_Found := False;
+      Quality_Manager.Storage.List
+        (Store, Quality_Manager.Storage.Attempt_Record, Values, 100_000, Result);
+      if Result.Kind /= Success then
+         return;
+      end if;
+      for Value of Values loop
+         declare
+            Document : Jsonlib.Documents.Document;
+            Error    : Jsonlib.Errors.Error_Info;
+            Root     : Jsonlib.Documents.Node;
+            Stored_Dispatch, Identity : Unbounded_String;
+            Number_Value : Natural;
+            Complete : Boolean;
+         begin
+            Jsonlib.Parsers.Parse
+              (To_String (Value.Payload), Document, Error,
+               (Max_Depth => 8, Max_Length => 1_048_576,
+                Duplicates => Jsonlib.Parsers.Refuse_Duplicates));
+            if Jsonlib.Errors.Failed (Error) then
+               Result := Make_Result
+                 (Integrity_Error, "persisted attempt is invalid JSON", "qm.dispatch.attempt-json");
+               return;
+            end if;
+            Root := Document.Root;
+            Complete := String_Field (Document, Root, "dispatch_id", Stored_Dispatch);
+            if not Complete then
+               Result := Make_Result
+                 (Integrity_Error, "persisted attempt has no dispatch identity",
+                  "qm.dispatch.attempt-fields");
+               return;
+            elsif To_String (Stored_Dispatch) = Dispatch_Id then
+               Complete := String_Field (Document, Root, "execution_identity", Identity)
+                 and then Attempt_Number_Field (Document, Root, Number_Value)
+                 and then Number_Value > 0;
+               if not Complete
+                 or else Ada.Strings.Fixed.Index
+                   (To_String (Seen), "," & Number (Number_Value) & ",") > 0
+               then
+                  Result := Make_Result
+                    (Integrity_Error, "persisted attempt sequence is invalid",
+                     "qm.dispatch.attempt-sequence");
+                  return;
+               end if;
+               Append (Seen, Number (Number_Value) & ",");
+               if To_String (Identity) = Operation_Name (Match_Operation) then
+                  Matching_Number := Number_Value;
+                  Matching_Found := True;
+               end if;
+               if Number_Value > Maximum_Number then
+                  declare
+                     Text : constant String := To_String (Identity);
+                  begin
+                     if Text'Length <= Operation_Prefix'Length
+                       or else Text (Text'First .. Text'First + Operation_Prefix'Length - 1)
+                         /= Operation_Prefix
+                     then
+                        raise Constraint_Error;
+                     end if;
+                     Latest_Operation := Quality_Manager.Identities.Operation_Id'Value
+                       (Text (Text'First + Operation_Prefix'Length .. Text'Last));
+                  exception
+                     when Constraint_Error =>
+                        Result := Make_Result
+                          (Integrity_Error, "persisted execution identity is malformed",
+                           "qm.dispatch.attempt-identity");
+                        return;
+                  end;
+                  Maximum_Number := Number_Value;
+               end if;
+            end if;
+         end;
+      end loop;
+      Result := Make_Result (Success);
+   end Inspect_Attempts;
+
+   procedure Next_Execution_Attempt
+     (Store          : in out Quality_Manager.Storage.Store;
+      Dispatch_Id    : String;
+      Attempt_Number : out Positive;
+      Operation      : out Quality_Manager.Identities.Operation_Id;
+      Result         : out Operation_Result) is
+      Maximum, Matching : Natural;
+      Latest : Quality_Manager.Identities.Operation_Id;
+      Found  : Boolean;
+   begin
+      Attempt_Number := 1;
+      Operation := 0;
+      Inspect_Attempts
+        (Store, Dispatch_Id, 0, Maximum, Latest, Matching, Found, Result);
+      if Result.Kind /= Success then
+         return;
+      elsif Maximum = Natural'Last then
+         Result := Make_Result
+           (Integrity_Error, "native attempt sequence is exhausted", "qm.dispatch.attempt-range");
+         return;
+      end if;
+      Attempt_Number := Positive (Maximum + 1);
+      Operation := Execution_Operation (Dispatch_Id, Attempt_Number);
+   end Next_Execution_Attempt;
+
+   procedure Latest_Execution_Attempt
+     (Store          : in out Quality_Manager.Storage.Store;
+      Dispatch_Id    : String;
+      Attempt_Number : out Positive;
+      Operation      : out Quality_Manager.Identities.Operation_Id;
+      Result         : out Operation_Result) is
+      Maximum, Matching : Natural;
+      Found : Boolean;
+   begin
+      Attempt_Number := 1;
+      Operation := 0;
+      Inspect_Attempts
+        (Store, Dispatch_Id, 0, Maximum, Operation, Matching, Found, Result);
+      if Result.Kind = Success and then Maximum = 0 then
+         Result := Make_Result
+           (Not_Found, "dispatch has no completed native attempt", "qm.dispatch.attempt-missing");
+      elsif Result.Kind = Success then
+         Attempt_Number := Positive (Maximum);
+      end if;
+   end Latest_Execution_Attempt;
 
    function Boolean_Field
      (Document : Jsonlib.Documents.Document;
@@ -567,6 +729,9 @@ package body Quality_Manager.Dispatch is
       Result      : out Operation_Result) is
       Outcome : Quality_Manager.Model.Outcome_Kind;
       Attempt : Quality_Manager.Storage.Schema.Attempt;
+      Maximum, Matching : Natural;
+      Latest : Quality_Manager.Identities.Operation_Id;
+      Found  : Boolean;
    begin
       case Snapshot.State is
          when Quality_Manager.Integrations.Runner.Awaiting_Integration_State |
@@ -580,8 +745,18 @@ package body Quality_Manager.Dispatch is
          when others =>
             Outcome := Quality_Manager.Model.Unresolved;
       end case;
+      Inspect_Attempts
+        (Store, Dispatch_Id, Operation, Maximum, Latest, Matching, Found, Result);
+      if Result.Kind /= Success then
+         return;
+      elsif not Found and then Maximum = Natural'Last then
+         Result := Make_Result
+           (Integrity_Error, "native attempt sequence is exhausted", "qm.dispatch.attempt-range");
+         return;
+      end if;
       Attempt :=
         (Attempt           => Quality_Manager.Identities.Attempt_Id (Operation),
+         Attempt_Number    => (if Found then Positive (Matching) else Positive (Maximum + 1)),
          Dispatch_Id       => To_Unbounded_String (Dispatch_Id),
          Execution_Identity => To_Unbounded_String (Operation_Name (Operation)),
          Started_At        => 0,
@@ -679,7 +854,8 @@ package body Quality_Manager.Dispatch is
       Lease_Expires_At : Interfaces.Unsigned_64;
       Timeout_Seconds  : Positive;
       Snapshot         : out Quality_Manager.Integrations.Runner.Task_Snapshot;
-      Result           : out Operation_Result) is separate;
+      Result           : out Operation_Result;
+      Maximum_Attempts : Positive := 1) is separate;
 
    function Integration_Intent
      (Request : Quality_Manager.Integrations.Runner.Execution_Request) return String is

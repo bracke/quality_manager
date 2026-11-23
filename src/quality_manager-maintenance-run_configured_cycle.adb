@@ -19,6 +19,7 @@ procedure Run_Configured_Cycle
          (Database.UUIDs.UUID_To_String (Database.UUIDs.Generate_UUID));
    Lease_Generation : Interfaces.Unsigned_64 := 0;
    Lease_Held : Boolean := False;
+   Effective_Dry_Run : Boolean := False;
    procedure Acquire_Coordinator is
       Now      : constant Interfaces.Unsigned_64 := Unix_Now;
       Duration : constant Interfaces.Unsigned_64 :=
@@ -52,9 +53,8 @@ procedure Run_Configured_Cycle
       Initialize
         (Item, Store'Unchecked_Access, Scheduler'Unchecked_Access, Quality, Planner, Runner,
          Settings.Maximum_Task_Seconds, Settings.Remediation_Attempts);
-      Item.Lease_Owner := To_Unbounded_String (Lease_Owner);
-      Item.Lease_Generation := Lease_Generation;
-      Item.Lease_Seconds := Settings.Maximum_Task_Seconds + 300;
+      Configure_Coordinator_Lease
+        (Item, Lease_Owner, Lease_Generation, Settings.Maximum_Task_Seconds + 300);
    end Configure_Context;
 
    procedure Release_Coordinator is
@@ -95,15 +95,18 @@ procedure Run_Configured_Cycle
 begin
    Quality_Manager.Config.Load (Config_Path, Config_Required, Settings, Result);
    if Result.Kind = Success then
+      Effective_Dry_Run := Dry_Run or else Settings.Dry_Run;
+   end if;
+   if Result.Kind = Success and then not Effective_Dry_Run then
       Quality_Manager.Storage.Open
         (Store, To_String (Settings.Coordinator_Database), True, Result);
    end if;
-   if Result.Kind = Success then
+   if Result.Kind = Success and then not Effective_Dry_Run then
       Acquire_Coordinator;
    end if;
    if Result.Kind = Success then
       Configure_Context;
-      Run_Cycle (Item, Project_Selector, Dry_Run or else Settings.Dry_Run, Result);
+      Run_Cycle (Item, Project_Selector, Effective_Dry_Run, Result);
    end if;
    Release_Coordinator;
    Close_Resources;

@@ -1,7 +1,12 @@
 with Ada.Streams;
 with Ada.Streams.Stream_IO;
+with Ada.Calendar;
+with Ada.Calendar.Conversions;
+with Ada.Directories;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
+with Database.UUIDs;
 with Interfaces;
 with Hostkit;
 with Hostkit.Process;
@@ -10,9 +15,12 @@ with Jsonlib.Errors;
 with Jsonlib.Parsers;
 with Jsonlib.Serializers;
 with Quality_Manager.Config;
+with Quality_Manager.Integrations.Improve;
 with Quality_Manager.Integrations.JSON_CLI;
 with Quality_Manager.Integrations.Processes;
+with Quality_Manager.Integrations.Runner;
 with Quality_Manager.Model;
+with Quality_Manager.Reproducibility;
 with Quality_Manager.Journal;
 with Quality_Manager.Storage;
 with Quality_Manager.Storage.Records;
@@ -59,6 +67,8 @@ package body Quality_Manager.Releases is
         & ", expected=" & Q (Expected_Commit) & ")"
         & ", build=" & Boolean'Image (Checks.Clean_Build)
         & ", reproducible=" & Boolean'Image (Checks.Reproducible_Build)
+        & ", source=" & Boolean'Image (Checks.Source_Unchanged)
+        & ", clean=" & Boolean'Image (Checks.Git_Clean)
         & ", tests=" & Boolean'Image (Checks.AUnit_Passed)
         & ", proof=" & Boolean'Image (not Checks.Proof_Applicable or else Checks.GNATprove_Passed);
    end Check_Failure_Message;
@@ -421,6 +431,17 @@ package body Quality_Manager.Releases is
       Git_Executable   : String;
       Decision         : out Qualification_Decision;
       Result           : out Operation_Result) is separate;
+
+   procedure Qualify_With_Remediation
+     (Item                : in out Context;
+      Maintenance_Context : in out Quality_Manager.Maintenance.Context;
+      Quality             : Quality_Manager.Integrations.Quality.Adapter;
+      Release_Id          : String;
+      Alire_Executable    : String;
+      Git_Executable      : String;
+      Maximum_Cycles      : Positive;
+      Decision            : out Qualification_Decision;
+      Result              : out Operation_Result) is separate;
 
    procedure Invalidate_If_Changed
      (Item                 : in out Context;

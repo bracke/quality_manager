@@ -13,6 +13,10 @@ Run from a clean checkout on Linux with the pinned sibling repositories.
 - Execute and archive one real campaign with frozen baselines.
 - Execute and archive one exact-source release qualification and verify its
   exported evidence digest.
+- Confirm qualification used two independently prepared clean workspaces,
+  compared artifact manifests, and revalidated source/Git identity afterward.
+- For applicable proof, archive the selected project, proof options, analyzed
+  unit inventory, and proved-obligation summary.
 - Generate the CycloneDX SBOM, sign the evidence and SBOM with the release key,
   and verify both detached signatures with the archived public key.
 - Restore the coordinator database and optional `.fts` companion on an

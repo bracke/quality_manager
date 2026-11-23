@@ -28,7 +28,8 @@ package body Quality_Manager.Transitions is
         [Executing | Blocked | Cancelled | Superseded | Needs_Intervention => True,
          others => False],
       Executing =>
-        [Awaiting_Integration | Blocked | Failed | Cancelled | Inconclusive | Needs_Intervention => True,
+        [Queued | Awaiting_Integration | Blocked | Failed | Cancelled | Inconclusive |
+         Needs_Intervention => True,
          others => False],
       Awaiting_Integration =>
         [Awaiting_Assessment | Blocked | Failed | Cancelled | Inconclusive | Needs_Intervention => True,

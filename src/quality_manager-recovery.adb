@@ -7,6 +7,7 @@ with Jsonlib.Errors;
 with Jsonlib.Parsers;
 with Quality_Manager.Integrations.JSON_CLI;
 with Quality_Manager.Model;
+with Quality_Manager.Storage.Decoding;
 with Quality_Manager.Storage.Records;
 with Quality_Manager.Storage.Schema;
 with Quality_Manager.Verification;
@@ -242,6 +243,7 @@ package body Quality_Manager.Recovery is
       Journal  : Quality_Manager.Storage.Stored_Entity;
       Entries  : Quality_Manager.Storage.Entity_Vectors.Vector;
       Work     : Quality_Manager.Storage.Stored_Entity;
+      Assessment_Work : Quality_Manager.Storage.Schema.Work_Item;
       Project  : Quality_Manager.Identities.Project_Key;
       Matches  : Natural := 0;
       Response : Quality_Manager.Integrations.JSON_CLI.Response;
@@ -307,7 +309,25 @@ package body Quality_Manager.Recovery is
               (Integrity_Error, "assessment operation does not identify exactly one work item",
                "qm.recovery.work");
          else
-            Decode_Project (Work, Project, Result);
+            Quality_Manager.Storage.Decoding.Read_Work
+              (Store, To_String (Work.Entity_Key), Assessment_Work, Result);
+            if Result.Kind = Success
+              and then
+                (To_String (Assessment_Work.Finding_Identities) /= "__assessment__"
+                 or else Length (Assessment_Work.Improve_Plan_Id) /= 0
+                 or else Assessment_Work.Improve_Revision /= 0
+                 or else Length (Assessment_Work.Improve_Task_Id) /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (To_String (Assessment_Work.Global_Remediation), "assessment:") /= 1)
+            then
+               Result := Make_Result
+                 (Invalid_Request,
+                  "abbreviated assessment recovery cannot complete remediation work",
+                  "qm.recovery.assessment-only");
+            end if;
+            if Result.Kind = Success then
+               Decode_Project (Work, Project, Result);
+            end if;
          end if;
       end Find_Work;
 

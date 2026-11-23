@@ -39,7 +39,8 @@ begin
          Quality_Manager.Dispatch.Execute_Persisted
            (Item.Database.all, Item.Runner, To_String (Work_Id),
             "coordinator:" & Quality_Manager.Storage.Identity (Item.Database.all),
-            Now, Expires, Item.Maximum_Task_Seconds, Snapshot, Local);
+            Now, Expires, Item.Maximum_Task_Seconds, Snapshot, Local,
+            Maximum_Attempts => Item.Maximum_Attempts);
       else
          Quality_Manager.Dispatch.Integrate_Persisted
            (Item.Database.all, Item.Runner, To_String (Work_Id),

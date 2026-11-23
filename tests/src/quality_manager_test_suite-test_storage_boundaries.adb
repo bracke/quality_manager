@@ -364,6 +364,39 @@ begin
         (Store, Quality, Malformed_Operation, 2, Result);
       Assert (Result.Kind = Quality_Manager.Results.Integrity_Error,
               "assessment recovery rejects malformed qualified project evidence");
+
+      declare
+         Remediation : constant Quality_Manager.Storage.Schema.Work_Item :=
+           (Work_Id => To_Unbounded_String ("work:recovery-remediation"),
+            Global_Remediation => To_Unbounded_String ("remediation:recovery"),
+            Project =>
+              (To_Unbounded_String ("123e4567-e89b-12d3-a456-426614174000"),
+               7, To_Unbounded_String ("/project")),
+            Origin => Quality_Manager.Model.Maintenance,
+            Finding_Identities => To_Unbounded_String ("AQ-01"), Priority => 1,
+            Baseline_Assessment_Run => 1,
+            Improve_Plan_Id => To_Unbounded_String ("PLAN-001"), Improve_Revision => 1,
+            Improve_Task_Id => To_Unbounded_String ("IMP-001"),
+            Improve_Content_SHA256 => To_Unbounded_String ("content"),
+            Planned_Source_Fingerprint => To_Unbounded_String ("candidate-source"),
+            Effective_Policy_Digest => To_Unbounded_String ("policy"),
+            State => Quality_Manager.Model.Executing,
+            Outcome => Quality_Manager.Model.No_Outcome);
+         Operation : constant Quality_Manager.Identities.Operation_Id :=
+           Quality_Manager.Identities.Operation_Identity
+             ("maintenance-assessment", To_String (Remediation.Work_Id));
+      begin
+         Quality_Manager.Storage.Records.Save (Store, Remediation, Result);
+         Quality_Manager.Storage.Prepare_Operation
+           (Store, Operation, "assessment", "intent", "assessment:2", Result);
+         Quality_Manager.Storage.Advance_Operation
+           (Store, Operation, Quality_Manager.Journal.Prepared,
+            Quality_Manager.Journal.Invoking, "assessment:2", "", Result);
+         Quality_Manager.Recovery.Reconcile_Assessment (Store, Quality, Operation, 2, Result);
+         Assert
+           (Result.Kind = Quality_Manager.Results.Invalid_Request,
+            "assessment-only recovery cannot certify published remediation work");
+      end;
    end;
 
    Quality_Manager.Storage.Close (Store, Result);

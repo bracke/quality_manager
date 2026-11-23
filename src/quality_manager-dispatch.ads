@@ -23,6 +23,22 @@ package Quality_Manager.Dispatch is
    --  @param State State.
    --  @return Coordinator State result.
 
+   procedure Next_Execution_Attempt
+     (Store          : in out Quality_Manager.Storage.Store;
+      Dispatch_Id    : String;
+      Attempt_Number : out Positive;
+      Operation      : out Quality_Manager.Identities.Operation_Id;
+      Result         : out Quality_Manager.Results.Operation_Result);
+   --  Resolve the restart-stable identity for the next uncompleted native attempt.
+
+   procedure Latest_Execution_Attempt
+     (Store          : in out Quality_Manager.Storage.Store;
+      Dispatch_Id    : String;
+      Attempt_Number : out Positive;
+      Operation      : out Quality_Manager.Identities.Operation_Id;
+      Result         : out Quality_Manager.Results.Operation_Result);
+   --  Resolve the most recently completed durable native attempt.
+
    procedure Bind_Published_Task
      (Store    : in out Quality_Manager.Storage.Store;
       Dispatch : Quality_Manager.Storage.Schema.Dispatch;
@@ -85,7 +101,8 @@ package Quality_Manager.Dispatch is
       Lease_Expires_At : Interfaces.Unsigned_64;
       Timeout_Seconds  : Positive;
       Snapshot         : out Quality_Manager.Integrations.Runner.Task_Snapshot;
-      Result           : out Quality_Manager.Results.Operation_Result);
+      Result           : out Quality_Manager.Results.Operation_Result;
+      Maximum_Attempts : Positive := 1);
    --  Perform Execute Persisted.
    --  @param Store Store.
    --  @param Runner Runner.
@@ -96,6 +113,7 @@ package Quality_Manager.Dispatch is
    --  @param Timeout_Seconds Timeout Seconds.
    --  @param Snapshot Snapshot.
    --  @param Result Result.
+   --  @param Maximum_Attempts Maximum durable executions allowed for this dispatch.
 
    procedure Queue_Persisted
      (Store   : in out Quality_Manager.Storage.Store;
