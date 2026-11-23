@@ -262,15 +262,15 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
 | P11-06 real maintenance scenario | complete | assessments 19–24 cover all six projects; each cycle has a terminal coordination event |
 | P11-07 real campaign scenario | complete | `phase11-structure-20261122` advanced STR-01 from baseline 19 to passing assessment 25 |
-| P11-08 real release scenario | blocked | assessment 29 passes the native checker but cannot resolve unpublished sibling crates in isolation |
+| P11-08 real release scenario | complete | candidate `f6bc7928...` qualified with assessment 36 and exported canonical evidence |
 | P11-09 crash/concurrency stress | complete | abrupt termination recovery, ownership contention, stale fencing, and 128 lease cycles pass |
 | P11-10 packaging/docs/CI | implemented | source-only manifest passes; pinned Linux CI validates and creates a source archive |
 
 The stabilization work fixes explicit configuration propagation for maintenance, campaigns, and release export,
 uses the recovery state machine in operational reporting, and tests release evidence corruption, process failures,
 native replay, policy drift, campaign contract errors, and scheduler resource accounting. `quality-manager doctor`
-negotiates the pinned model_runner headless contract successfully. Release status remains **blocked** by the measured
-candidate's quality failures; fixture-backed tests do not replace that gate.
+negotiates the pinned model_runner headless contract successfully. The measured release candidate is **qualified**;
+fixture-backed tests were supplemented by the real isolated assessment and coordinator qualification workflow.
 
 Ada Quality `81b414f` adds a tested migration for the early schema-3 measurement semantics and finding identities.
 The live database passed migration and integrity checks with its durable identity preserved, and contains the six
@@ -378,12 +378,12 @@ exact release candidate produced assessment 26 and was correctly blocked. Qualit
 assessments 27 and 28. The latter passed exact commit, build, reproducibility, tests, and applicable proof checks, but
 still had nine nonpassing quality indicators, so qualification issued no bundle.
 
-Assessment 29 confirmed the native Ada release checker, audited exception boundaries, and canonical release manifest.
-The isolated Alire build remains blocked because `config` and `representation` have no remote repository, while
-the direct application dependencies are not published in the Alire index. The required `hostkit`, `jsonlib`,
-`database`, and `cryptolib` revisions are present in their Git remotes, but that does not satisfy the unpinned
-release manifest. Local development pins remain necessary until exact Alire releases are available;
-`alire.release.toml` records the intended source-only dependency contract.
+Assessments 35 and 36 confirmed all 33 release-profile indicators against source fingerprint `2f2825911f7938c9`.
+The root and test manifests now pin `config`, `representation`, `hostkit`, `jsonlib`, `database`, and `cryptolib` to
+immutable public Git commits. Ada Quality `d7d9cfb` prepares those dependencies inside its isolated workspace while
+excluding generated Alire caches from source identity. Coordinator candidate `f6bc7928...` then completed the real
+qualification path at assessment 36, recorded all local gates, stored three bounded evidence chunks, and exported a
+canonical bundle identifying commit `532f89d`, 33 indicators, 90.03% coverage, and a qualified decision.
 
 Coordinator ownership now uses an expiry-aware durable lease with fencing generations and renewal before external
 work. The suite kills a helper process without finalization, reopens its database, reconstructs the prepared journal

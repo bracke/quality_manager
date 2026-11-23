@@ -16,22 +16,22 @@ quality_manager = "*"
 quality_manager = { path = ".." }
 
 [[pins]]
-config = { path = "../../config" }
+config = { url = "https://github.com/bracke/config.git", commit = "70325b0e27c8d10a6e95e387785125eea56cd86a" }
 
 [[pins]]
-jsonlib = { path = "../../jsonlib" }
+jsonlib = { url = "https://github.com/bracke/jsonlib.git", commit = "24a1b18a7be19bb65725d8114c4f069658ced614" }
 
 [[pins]]
-representation = { path = "../../representation" }
+representation = { url = "https://github.com/bracke/representation.git", commit = "23a5655b43679f4919d215b488c73a00eb79f8e3" }
 
 [[pins]]
-cryptolib = { path = "../../cryptolib" }
+cryptolib = { url = "https://github.com/bracke/cryptolib.git", commit = "2e5c415f65fd49c2a496c97813740fa9b83e02fa" }
 
 [[pins]]
-database = { path = "../../database" }
+database = { url = "https://github.com/bracke/database.git", commit = "389445ab12edf3206dadae902907bb1e92475673" }
 
 [[pins]]
-hostkit = { path = "../../hostkit" }
+hostkit = { url = "https://github.com/bracke/hostkit.git", commit = "2fb21889d8518e7a609f1b5b61c95a5e7fb68d48" }
 
 [build-profiles]
 "*" = "development"

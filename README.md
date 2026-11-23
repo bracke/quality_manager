@@ -69,9 +69,10 @@ match. An ambiguous assessment can be adopted only through
 Campaign and release lifecycle commands are listed by `quality-manager help`.
 See `docs/quality-manager.1` for the operator reference.
 
-Phase 11 stabilization currently passes the 25-test AUnit suite and the
-warnings-as-errors validation build. Real maintenance and campaign records are
-complete. The exact-candidate release run is correctly blocked by quality
-failures. Full-scope production coverage is 7,209/8,007 lines (90.0325%), which
-passes the stabilization threshold. See `docs/release-checklist.md` and
+Phase 11 stabilization passes the 25-test AUnit suite, warnings-as-errors
+validation, and all 33 release-profile indicators. Real maintenance, campaign,
+and release-qualification records are complete. Candidate `f6bc7928...` was
+qualified by assessment 36 with an integrity-checked evidence bundle.
+Full-scope production coverage is 7,209/8,007 lines (90.0325%), which passes the
+stabilization threshold. See `docs/release-checklist.md` and
 `docs/implementation-status.md`.
