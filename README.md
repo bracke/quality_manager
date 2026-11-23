@@ -71,8 +71,8 @@ See `docs/quality-manager.1` for the operator reference.
 
 Phase 11 stabilization passes the 25-test AUnit suite, warnings-as-errors
 validation, and all 33 release-profile indicators. Real maintenance, campaign,
-and release-qualification records are complete. Candidate `f6bc7928...` was
-qualified by assessment 36 with an integrity-checked evidence bundle.
+and release-qualification records are complete. The exact committed candidate
+is qualified by a 33-indicator assessment and an integrity-checked evidence bundle.
 Full-scope production coverage is 7,209/8,007 lines (90.0325%), which passes the
 stabilization threshold. See `docs/release-checklist.md` and
 `docs/implementation-status.md`.

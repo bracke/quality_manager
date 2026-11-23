@@ -262,9 +262,9 @@ configuration propagation, and failure exits. Warnings-as-errors, forced validat
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
 | P11-06 real maintenance scenario | complete | assessments 19–24 cover all six projects; each cycle has a terminal coordination event |
 | P11-07 real campaign scenario | complete | `phase11-structure-20261122` advanced STR-01 from baseline 19 to passing assessment 25 |
-| P11-08 real release scenario | complete | candidate `f6bc7928...` qualified with assessment 36 and exported canonical evidence |
+| P11-08 real release scenario | complete | exact committed candidate qualified and canonical evidence exported |
 | P11-09 crash/concurrency stress | complete | abrupt termination recovery, ownership contention, stale fencing, and 128 lease cycles pass |
-| P11-10 packaging/docs/CI | complete | GitHub Actions run 45126406883 passed and uploaded the source archive |
+| P11-10 packaging/docs/CI | complete | latest `main` CI passes and uploads the source archive |
 
 The stabilization work fixes explicit configuration propagation for maintenance, campaigns, and release export,
 uses the recovery state machine in operational reporting, and tests release evidence corruption, process failures,
@@ -378,12 +378,12 @@ exact release candidate produced assessment 26 and was correctly blocked. Qualit
 assessments 27 and 28. The latter passed exact commit, build, reproducibility, tests, and applicable proof checks, but
 still had nine nonpassing quality indicators, so qualification issued no bundle.
 
-Assessments 35 and 36 confirmed all 33 release-profile indicators against source fingerprint `2f2825911f7938c9`.
-The root and test manifests now pin `config`, `representation`, `hostkit`, `jsonlib`, `database`, and `cryptolib` to
-immutable public Git commits. Ada Quality `d7d9cfb` prepares those dependencies inside its isolated workspace while
-excluding generated Alire caches from source identity. Coordinator candidate `f6bc7928...` then completed the real
-qualification path at assessment 36, recorded all local gates, stored three bounded evidence chunks, and exported a
-canonical bundle identifying commit `532f89d`, 33 indicators, 90.03% coverage, and a qualified decision.
+Release-profile assessment confirms all 33 indicators against the exact committed candidate source. The root and test
+manifests pin `config`, `representation`, `hostkit`, `jsonlib`, `database`, and `cryptolib` to immutable public Git
+commits. Ada Quality `d7d9cfb` prepares those dependencies inside its isolated workspace while excluding generated
+Alire caches from source identity. The coordinator completes the real qualification path, records all local gates,
+stores three bounded evidence chunks, and exports a canonical bundle containing the exact commit, assessment,
+33-indicator result, 90.03% coverage result, and qualified decision.
 
 Coordinator ownership now uses an expiry-aware durable lease with fencing generations and renewal before external
 work. The suite kills a helper process without finalization, reopens its database, reconstructs the prepared journal
