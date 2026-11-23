@@ -1,6 +1,6 @@
-covered=7209
-total=8007
+covered=7589
+total=8432
 complete=true
 inventory=gcov-production-lines-v3
-source_fingerprint=3a582a742b38a53a
+source_fingerprint=a86feacf75993807
 toolchain_fingerprint=7a5b142391f2b96c

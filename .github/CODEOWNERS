@@ -1,0 +1,10 @@
+* @bracke
+
+# Changes to authorization, evidence, CI, schemas, and deployment require owner review.
+/.github/ @bracke
+/config/ @bracke
+/deploy/ @bracke
+/schemas/ @bracke
+/src/quality_manager-policies.* @bracke
+/src/quality_manager-release_artifacts.* @bracke
+/src/quality_manager-storage* @bracke

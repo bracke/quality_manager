@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bracke/quality_manager/schemas/release-signature-v1.schema.json",
+  "title": "Quality Manager release artifact signature",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "algorithm", "key_id", "artifact_sha256", "signature"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "quality-manager-release-signature-v1" },
+    "algorithm": { "const": "ed25519-sha256" },
+    "key_id": { "pattern": "^ed25519-[0-9a-f]{16}$" },
+    "artifact_sha256": { "pattern": "^[0-9a-f]{64}$" },
+    "signature": { "pattern": "^[0-9a-f]{128}$" }
+  }
+}

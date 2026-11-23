@@ -2,6 +2,7 @@ with "config";
 with "jsonlib";
 with "database";
 with "hostkit";
+with "cryptolib";
 
 project Quality_Manager is
    Config_Root := external ("CONFIG_ALIRE_PREFIX", "../config");

@@ -14,6 +14,14 @@ begin
       and then To_String (Result.Standard_Output) = "literal;not-a-command",
       "argument vector is executed without shell interpretation");
 
+   Request.Executable := To_Unbounded_String ("/usr/bin/true");
+   Request.Arguments.Clear;
+   Quality_Manager.Integrations.Processes.Execute (Request, Result);
+   Assert
+     (Result.Started and then Result.Exit_Status = 0
+      and then Length (Result.Standard_Output) = 0,
+      "empty process output is represented as an empty value");
+
    Request.Arguments.Clear;
    Request.Executable := To_Unbounded_String ("/usr/bin/env");
    Request.Environment.Append (To_Unbounded_String ("QM_VISIBLE=yes"));

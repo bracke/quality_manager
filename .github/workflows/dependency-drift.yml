@@ -1,0 +1,46 @@
+name: Dependency drift report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-manager-dependency-drift
+  cancel-in-progress: true
+
+jobs:
+  report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Compare pinned revisions with upstream default branches
+        shell: bash
+        run: |
+          set -o pipefail
+          report=dependency-drift.txt
+          echo "repository pinned upstream status" > "$report"
+          while IFS='=' read -r repository pinned; do
+            upstream=$(git ls-remote --symref "https://github.com/bracke/${repository}.git" HEAD |
+              awk '$1 != "ref:" {print $1; exit}')
+            test -n "$upstream"
+            status=update_available
+            if [[ "$pinned" == "$upstream" ]]; then status=current; fi
+            echo "$repository $pinned $upstream $status" >> "$report"
+          done < .github/dependency-lock.txt
+          {
+            echo "### Pinned dependency drift"
+            echo
+            echo '```text'
+            cat "$report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload dependency report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-drift-report
+          path: dependency-drift.txt

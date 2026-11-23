@@ -119,6 +119,12 @@ procedure Test_Release_Qualification (Item : in out Fixture) is
    end Cleanup;
 begin
    Cleanup;
+   begin
+      Quality_Manager.Releases.Qualify_Configured ("", "/tmp/no-such-release-config", False);
+      Assert (False, "empty configured release qualification must fail");
+   exception
+      when Quality_Manager.Releases.Release_Error => null;
+   end;
    Quality_Manager.Storage.Open (Store, Path, True, Result);
    Assert (Result.Kind = Quality_Manager.Results.Success, "release store opened");
    Quality_Manager.Releases.Create

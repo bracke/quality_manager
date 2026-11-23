@@ -50,6 +50,18 @@ source-identity gates for the candidate.
 .TP
 .B release-export ID OUTPUT
 Verify and export a qualified evidence bundle.
+.TP
+.B release-keygen PRIVATE_KEY PUBLIC_KEY
+Create a non-overwriting Ed25519 keypair. The private key is restricted to its owner.
+.TP
+.B release-sign ARTIFACT PRIVATE_KEY
+Create an Ed25519/SHA-256 detached signature at ARTIFACT.sig without overwriting an existing sidecar.
+.TP
+.B release-verify ARTIFACT PUBLIC_KEY
+Verify the artifact digest, canonical signature metadata, key identity, and Ed25519 signature.
+.TP
+.B release-sbom MANIFEST OUTPUT
+Generate a deterministic CycloneDX 1.6 SBOM from exact HTTPS commit pins in an Alire manifest.
 .SH AUTHORIZATION
 .TP
 .B approve RECORD | reject RECORD
@@ -63,3 +75,7 @@ failure returns nonzero and retains its diagnostic evidence.
 .I config/quality-manager.toml
 is the default configuration. Generated coordinator databases and reports must
 not be committed.
+.I deploy/systemd/
+contains example continuous and timer-driven service units. Operational backup,
+restore, signing, and recovery-drill procedures are in docs/operations.md and
+docs/disaster-recovery-drill.md.

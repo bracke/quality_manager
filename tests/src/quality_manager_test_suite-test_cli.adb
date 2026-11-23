@@ -18,6 +18,12 @@ begin
    Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "missing option value rejected");
 
    Args.Clear;
+   Args.Append ("--config");
+   Args.Append ("");
+   Quality_Manager.CLI.Parse (Args, Options, Result);
+   Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "empty separate config path rejected");
+
+   Args.Clear;
    Args.Append ("--format=json");
    Args.Append ("--format");
    Args.Append ("terminal");
@@ -145,6 +151,12 @@ begin
 
    Args.Clear;
    Args.Append ("--project");
+   Args.Append ("");
+   Quality_Manager.CLI.Parse (Args, Options, Result);
+   Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "empty project selector is rejected");
+
+   Args.Clear;
+   Args.Append ("--project");
    Args.Append ("one");
    Args.Append ("doctor");
    Quality_Manager.CLI.Parse (Args, Options, Result);
@@ -159,5 +171,15 @@ begin
    Args.Append ("--unknown");
    Quality_Manager.CLI.Parse (Args, Options, Result);
    Assert (Result.Kind = Quality_Manager.Results.Invalid_Request, "unknown option is rejected");
+
+   Args.Clear;
+   Args.Append ("--help");
+   Quality_Manager.CLI.Parse (Args, Options, Result);
+   Assert (Result.Kind = Quality_Manager.Results.Success, "help flag is accepted");
+
+   Args.Clear;
+   Args.Append ("--version");
+   Quality_Manager.CLI.Parse (Args, Options, Result);
+   Assert (Result.Kind = Quality_Manager.Results.Success, "version flag is accepted");
 end Test_CLI;
 

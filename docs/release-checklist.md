@@ -13,6 +13,10 @@ Run from a clean checkout on Linux with the pinned sibling repositories.
 - Execute and archive one real campaign with frozen baselines.
 - Execute and archive one exact-source release qualification and verify its
   exported evidence digest.
+- Generate the CycloneDX SBOM, sign the evidence and SBOM with the release key,
+  and verify both detached signatures with the archived public key.
+- Restore the coordinator database and optional `.fts` companion on an
+  isolated host and complete the disaster-recovery drill.
 - Exercise termination at each journal boundary and competing coordinator
   leases; confirm no duplicate upstream operation.
 - Confirm manifests contain only source, schemas, documentation, completion,

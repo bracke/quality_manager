@@ -30,6 +30,10 @@ package body Quality_Manager.CLI is
       (To_Unbounded_String ("release-create"), Release_Create_Command),
       (To_Unbounded_String ("release-qualify"), Release_Qualify_Command),
       (To_Unbounded_String ("release-export"), Release_Export_Command),
+      (To_Unbounded_String ("release-keygen"), Release_Keygen_Command),
+      (To_Unbounded_String ("release-sign"), Release_Sign_Command),
+      (To_Unbounded_String ("release-verify"), Release_Verify_Command),
+      (To_Unbounded_String ("release-sbom"), Release_SBOM_Command),
       (To_Unbounded_String ("approve"), Approve_Command),
       (To_Unbounded_String ("reject"), Reject_Command)];
 
@@ -64,6 +68,10 @@ package body Quality_Manager.CLI is
       & "  release-create PROJECT PROFILE" & ASCII.LF
       & "  release-qualify ID" & ASCII.LF
       & "  release-export ID OUTPUT" & ASCII.LF
+      & "  release-keygen PRIVATE_KEY PUBLIC_KEY" & ASCII.LF
+      & "  release-sign ARTIFACT PRIVATE_KEY" & ASCII.LF
+      & "  release-verify ARTIFACT PUBLIC_KEY" & ASCII.LF
+      & "  release-sbom PINNED_MANIFEST OUTPUT" & ASCII.LF
       & "  approve RECORD | reject RECORD" & ASCII.LF
       & "            apply an exact, versioned authorization record" & ASCII.LF
       & "  help      show this help" & ASCII.LF
@@ -254,7 +262,9 @@ package body Quality_Manager.CLI is
                when Campaign_Create_Command | Campaign_Start_Command | Campaign_Pause_Command
                   | Campaign_Resume_Command | Campaign_Reconcile_Command | Release_Qualify_Command
                   | Approve_Command | Reject_Command => 1,
-               when Release_Create_Command | Release_Export_Command | Reconcile_Assessment_Command => 2,
+               when Release_Create_Command | Release_Export_Command | Release_Keygen_Command
+                  | Release_Sign_Command | Release_Verify_Command | Release_SBOM_Command
+                  | Reconcile_Assessment_Command => 2,
                when others => 0);
          if Value_Count /= Required then
             Fail

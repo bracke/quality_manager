@@ -24,6 +24,9 @@ database = "*"
 [[depends-on]]
 hostkit = "*"
 
+[[depends-on]]
+cryptolib = "*"
+
 [[pins]]
 config = { url = "https://github.com/bracke/config.git", commit = "70325b0e27c8d10a6e95e387785125eea56cd86a" }
 

@@ -5,6 +5,8 @@ procedure Test_JSON_CLI_Contracts (Item : in out Fixture) is
    Env  : Quality_Manager.Integrations.Processes.String_Vectors.Vector;
    Response : Quality_Manager.Integrations.JSON_CLI.Response;
 
+   function Is_Cancelled return Boolean is (True);
+
    procedure Run
      (Exit_Code : String; JSON : String;
       Contract : Quality_Manager.Integrations.JSON_CLI.Exit_Contract;
@@ -38,6 +40,16 @@ begin
      ("0", "{""schema_version"":1,""padding"":""0123456789""}",
       Quality_Manager.Integrations.JSON_CLI.Ada_Quality_Contract, Limit => 8);
    Assert (Response.Status.Kind = Quality_Manager.Results.Execution_Error, "bounded JSON output is enforced");
+
+   Args.Clear;
+   Args.Append (To_Unbounded_String ("0"));
+   Args.Append (To_Unbounded_String ("{""schema_version"":1}"));
+   Quality_Manager.Integrations.JSON_CLI.Execute
+     ("./bin/qm_adapter_fixture", Args, "", Env,
+      Quality_Manager.Integrations.JSON_CLI.Ada_Quality_Contract,
+      1, 10, 4_096, Response, Cancelled => Is_Cancelled'Unrestricted_Access);
+   Assert (Response.Status.Kind = Quality_Manager.Results.Interrupted,
+           "cooperative cancellation is normalized");
 
    declare
       Adapter : Quality_Manager.Integrations.Improve.Adapter;

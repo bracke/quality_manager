@@ -248,15 +248,15 @@ Operational views are read-only and fail if the coordinator database is absent o
 records bind the qualified project, exact Improve revision and content digest, policy digest, action, approver, and
 lifetime. Rejections are append-only audit events and cannot remove or rewrite an earlier approval.
 
-Gate: **passed**. The 25-test suite exercises all command routes, output formats, decision imports, recovery views,
+Gate: **passed**. The 26-test suite exercises all command routes, output formats, decision imports, recovery views,
 configuration propagation, and failure exits. Warnings-as-errors, forced validation, and GNATdoc passed.
 
 ## Phase 11 — Full release stabilization
 
 | Task | State | Evidence |
 | --- | --- | --- |
-| P11-01 complete AUnit suites | complete | 25/25 tests pass, including executable CLI acceptance |
-| P11-02 90% production coverage | complete | 7,209/8,007 production body lines, 90.0325%; the CLI and all bodies are measured |
+| P11-01 complete AUnit suites | complete | 26/26 tests pass, including executable CLI acceptance |
+| P11-02 90% production coverage | complete | 7,589/8,432 production body lines, 90.00%; the CLI and all bodies are measured |
 | P11-03 applicable GNATprove | complete | Journal state machine SPARK flow/proof passes |
 | P11-04 GNATdoc | complete | project documentation generation succeeds |
 | P11-05 clean Alire validation | complete | forced warnings-as-errors validation build succeeds |
@@ -388,5 +388,17 @@ stores three bounded evidence chunks, and exports a canonical bundle containing 
 Coordinator ownership now uses an expiry-aware durable lease with fencing generations and renewal before external
 work. The suite kills a helper process without finalization, reopens its database, reconstructs the prepared journal
 intent, rejects a competing opener, verifies expired-owner takeover, and completes 128 acquire/release cycles. The
-full production measurement is 7,209/8,007 lines (90.0325%), satisfying the stabilization gate without exclusions or
+full production measurement is 7,589/8,432 lines (90.00%), satisfying the stabilization gate without exclusions or
 carrying forward an earlier partial-scope result.
+
+## Operational hardening additions
+
+The repository now caches pinned GNATprove/GNATdoc installations in CI, audits upstream Git-pin drift weekly, and
+uses Dependabot for immutable GitHub Action revisions. `SECURITY.md` and CODEOWNERS define private reporting and
+review boundaries. Example continuous and timer-driven systemd units use one coordinator owner and a restricted
+writable-path set. The operations guide covers quiesced database/`.fts` backup and staged restore, and the quarterly
+drill verifies journal reconstruction and duplicate prevention.
+
+Release evidence and deterministic CycloneDX 1.6 SBOMs can be signed with owner-only Ed25519 keys and verified
+offline. The 26th AUnit case covers key safety, exact pin inventory, artifact tampering, malformed metadata, and
+independent verification; executable acceptance covers every new command and cooperative adapter cancellation.

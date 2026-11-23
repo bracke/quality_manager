@@ -104,7 +104,7 @@ begin
        Entity_Key => To_Unbounded_String ("event:operator-test"),
        State => To_Unbounded_String ("QUEUED->BLOCKED"),
        Payload => To_Unbounded_String
-         ("cause=missing authorization" & ASCII.LF & "evidence=approval:required"),
+         ("cause=missing | authorization" & ASCII.LF & "evidence=approval:required"),
        Terminal => True,
        Generation => 1),
       Result);
@@ -129,16 +129,21 @@ begin
             elsif View = Quality_Manager.Reporting.Event_Stream then
                Assert
                  (Ada.Strings.Fixed.Index
-                    (To_String (Output), """cause"":""missing authorization""") > 0
+                    (To_String (Output), """cause"":""missing | authorization""") > 0
                   and then Ada.Strings.Fixed.Index
                     (To_String (Output), """evidence"":""approval:required""") > 0,
                   "JSON event stream exports its persisted cause and evidence");
             end if;
          elsif View = Quality_Manager.Reporting.Event_Stream then
             Assert
-              (Ada.Strings.Fixed.Index (To_String (Output), "missing authorization") > 0
+              (Ada.Strings.Fixed.Index (To_String (Output), "missing") > 0
                and then Ada.Strings.Fixed.Index (To_String (Output), "approval:required") > 0,
                "human event views export their persisted cause and evidence");
+            if Format = Quality_Manager.CLI.Markdown_Output then
+               Assert
+                 (Ada.Strings.Fixed.Index (To_String (Output), "missing \| authorization") > 0,
+                  "Markdown event cells escape table delimiters");
+            end if;
          end if;
       end loop;
    end loop;

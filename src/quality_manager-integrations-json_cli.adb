@@ -91,7 +91,8 @@ package body Quality_Manager.Integrations.JSON_CLI is
       Output_Limit      : Positive;
       Result            : out Response;
       Discriminator_Name  : String := "";
-      Discriminator_Value : String := "") is
+      Discriminator_Value : String := "";
+      Cancelled         : Quality_Manager.Integrations.Processes.Cancellation_Check := null) is
       Request : Quality_Manager.Integrations.Processes.Request;
       Process : Quality_Manager.Integrations.Processes.Execution_Result;
       JSON_Status : Operation_Result;
@@ -102,6 +103,7 @@ package body Quality_Manager.Integrations.JSON_CLI is
       Request.Environment := Environment;
       Request.Timeout_Seconds := Timeout_Seconds;
       Request.Output_Limit := Output_Limit;
+      Request.Cancelled := Cancelled;
       Quality_Manager.Integrations.Processes.Execute (Request, Process);
       Result :=
         (Status => Make_Result (Execution_Error, "process did not start"),

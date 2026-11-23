@@ -1,0 +1,12 @@
+[Unit]
+Description=Run a Quality Manager maintenance cycle hourly
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+Persistent=true
+RandomizedDelaySec=5min
+Unit=quality-manager-maintenance.service
+
+[Install]
+WantedBy=timers.target

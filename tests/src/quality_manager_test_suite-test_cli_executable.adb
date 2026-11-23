@@ -5,6 +5,10 @@ procedure Test_CLI_Executable (Item : in out Fixture) is
    Config_Path   : constant String := "/tmp/quality-manager-cli.toml";
    Approval_Path : constant String := "/tmp/quality-manager-cli-approval.json";
    Campaign_Path : constant String := "/tmp/quality-manager-cli-campaign.json";
+   Artifact_Path : constant String := "/tmp/quality-manager-cli-artifact.json";
+   Private_Key_Path : constant String := "/tmp/quality-manager-cli-signing.key";
+   Public_Key_Path : constant String := "/tmp/quality-manager-cli-signing.pub";
+   SBOM_Path : constant String := "/tmp/quality-manager-cli-sbom.json";
    Fixture_Path  : constant String :=
      (if Ada.Directories.Exists (Ada.Directories.Current_Directory & "/tests/bin/qm_adapter_fixture")
       then Ada.Directories.Current_Directory & "/tests/bin/qm_adapter_fixture"
@@ -26,6 +30,11 @@ procedure Test_CLI_Executable (Item : in out Fixture) is
       Remove (Config_Path);
       Remove (Approval_Path);
       Remove (Campaign_Path);
+      Remove (Artifact_Path);
+      Remove (Artifact_Path & ".sig");
+      Remove (Private_Key_Path);
+      Remove (Public_Key_Path);
+      Remove (SBOM_Path);
    end Cleanup;
 
    procedure Write_File (Path, Text : String) is
@@ -183,6 +192,19 @@ begin
    Output := To_Unbounded_String
      (Run (Args ("--config", Config_Path, "release-create", "missing", "release"), 1));
    Output := To_Unbounded_String
+     (Run (Args ("--config", Config_Path, "release-create", "missing", "development"), 1));
+   Write_File (Artifact_Path, "{""qualified"":true}" & ASCII.LF);
+   Output := To_Unbounded_String
+     (Run (Args ("release-keygen", Private_Key_Path, Public_Key_Path)));
+   Output := To_Unbounded_String
+     (Run (Args ("release-sign", Artifact_Path, Private_Key_Path)));
+   Output := To_Unbounded_String
+     (Run (Args ("release-verify", Artifact_Path, Public_Key_Path)));
+   Output := To_Unbounded_String
+     (Run (Args ("release-sbom", "alire.toml", SBOM_Path)));
+   Output := To_Unbounded_String
+     (Run (Args ("release-sign", "/tmp/no-such-cli-artifact", Private_Key_Path), 1));
+   Output := To_Unbounded_String
      (Run (Args ("--config", Config_Path, "maintenance", "--project", "missing"), 1));
    Output := To_Unbounded_String
      (Run (Args ("--config", Config_Path, "reconcile-assessment", "not-an-operation", "2"), 1));
@@ -209,6 +231,10 @@ begin
      (Config_Path,
       "[coordinator]" & ASCII.LF &
       "database = ""/tmp/no-such-quality-manager-status.db""" & ASCII.LF);
+   Output := To_Unbounded_String
+     (Run (Args ("--config", Config_Path, "release-create", "missing", "release"), 1));
+   Output := To_Unbounded_String
+     (Run (Args ("--config", Config_Path, "release-qualify", "missing"), 1));
    Output := To_Unbounded_String (Run (Args ("--config", Config_Path, "status"), 1));
    Output := To_Unbounded_String (Run (Args ("unknown-command"), 1));
    Cleanup;

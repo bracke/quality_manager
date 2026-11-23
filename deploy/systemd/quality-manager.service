@@ -1,0 +1,24 @@
+[Unit]
+Description=Quality Manager autonomous coordinator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=quality-manager
+Group=quality-manager
+WorkingDirectory=/var/lib/quality-manager
+ExecStart=/usr/local/bin/quality-manager --config /etc/quality-manager/quality-manager.toml daemon
+Restart=on-failure
+RestartSec=15s
+StateDirectory=quality-manager
+ConfigurationDirectory=quality-manager
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/quality-manager -/var/lib/model-runner -/srv/quality-projects
+
+[Install]
+WantedBy=multi-user.target

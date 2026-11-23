@@ -26,9 +26,19 @@ jobs:
           path: quality_manager
 
       - name: Check out sibling crates
-        uses: bracke/project_tools/.github/actions/checkout-ada-siblings@main
+        uses: bracke/project_tools/.github/actions/checkout-ada-siblings@5d8a2cd22d3ebdb4a9f7aa953b21c5f4b3185872
         with:
           root: quality_manager
+
+      - name: Restore Alire and validation-tool cache
+        id: tool-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/alire
+            ~/.local/share/alire
+            ~/.alire
+          key: quality-manager-tools-${{ runner.os }}-gnat-15.2.1-gnatprove-15.1.0-gnatdoc-25.2.0
 
       - name: Set up Alire
         uses: alire-project/setup-alire@1ff7d9224297858cc9ecce29b08bc6109f93e49a # v6
@@ -39,9 +49,13 @@ jobs:
         run: alr settings --global --set solver.timeout 600
 
       - name: Install proof and documentation tools
+        if: steps.tool-cache.outputs.cache-hit != 'true'
         run: |
           alr --non-interactive install gnatprove=15.1.0
           alr --non-interactive install gnatdoc=25.2.0
+
+      - name: Add validation tools to PATH
+        run: |
           echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
 
       - name: Show selected compiler

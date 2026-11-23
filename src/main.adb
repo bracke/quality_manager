@@ -16,6 +16,7 @@ with Quality_Manager.Integrations.Summary;
 with Quality_Manager.Maintenance;
 with Quality_Manager.Recovery;
 with Quality_Manager.Releases;
+with Quality_Manager.Release_Artifacts;
 with Quality_Manager.Reporting;
 with Quality_Manager.Results;
 with Quality_Manager.Storage;
@@ -243,6 +244,31 @@ procedure Main is
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
    end Run_Release_Command;
 
+   procedure Run_Release_Artifact_Command is
+   begin
+      case Options.Command is
+         when Quality_Manager.CLI.Release_Keygen_Command =>
+            Quality_Manager.Release_Artifacts.Generate_Keypair
+              (To_String (Options.Primary_Value), To_String (Options.Secondary_Value), Result);
+         when Quality_Manager.CLI.Release_Sign_Command =>
+            Quality_Manager.Release_Artifacts.Sign
+              (To_String (Options.Primary_Value), To_String (Options.Secondary_Value), Result);
+         when Quality_Manager.CLI.Release_Verify_Command =>
+            Quality_Manager.Release_Artifacts.Verify
+              (To_String (Options.Primary_Value), To_String (Options.Secondary_Value), Result);
+         when Quality_Manager.CLI.Release_SBOM_Command =>
+            Quality_Manager.Release_Artifacts.Generate_SBOM
+              (To_String (Options.Primary_Value), To_String (Options.Secondary_Value), Result);
+         when others =>
+            Result := Quality_Manager.Results.Make_Result
+              (Quality_Manager.Results.Invalid_Request,
+               "invalid release artifact command", "qm.cli.release-artifact");
+      end case;
+      if Result.Kind /= Quality_Manager.Results.Success then
+         Report_Failure;
+      end if;
+   end Run_Release_Artifact_Command;
+
    procedure Run_Approval_Command is
       Store        : Quality_Manager.Storage.Store;
       Close_Result : Quality_Manager.Results.Operation_Result;
@@ -316,6 +342,11 @@ begin
          | Quality_Manager.CLI.Release_Qualify_Command
          | Quality_Manager.CLI.Release_Export_Command =>
          Run_Release_Command;
+      when Quality_Manager.CLI.Release_Keygen_Command
+         | Quality_Manager.CLI.Release_Sign_Command
+         | Quality_Manager.CLI.Release_Verify_Command
+         | Quality_Manager.CLI.Release_SBOM_Command =>
+         Run_Release_Artifact_Command;
       when Quality_Manager.CLI.Approve_Command | Quality_Manager.CLI.Reject_Command =>
          Run_Approval_Command;
    end case;

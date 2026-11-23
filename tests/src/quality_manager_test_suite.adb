@@ -28,6 +28,7 @@ with Quality_Manager.Planning;
 with Quality_Manager.Reporting;
 with Quality_Manager.Recovery;
 with Quality_Manager.Releases;
+with Quality_Manager.Release_Artifacts;
 with Quality_Manager.Results;
 with Quality_Manager.Scheduler;
 with Quality_Manager.Priorities;
@@ -141,6 +142,8 @@ package body Quality_Manager_Test_Suite is
 
    procedure Test_Release_Qualification (Item : in out Fixture) is separate;
 
+   procedure Test_Release_Artifacts (Item : in out Fixture) is separate;
+
    function Suite return AUnit.Test_Suites.Access_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite := AUnit.Test_Suites.New_Suite;
    begin
@@ -169,6 +172,7 @@ package body Quality_Manager_Test_Suite is
       Result.Add_Test (Caller.Create ("campaign workflow", Test_Campaign_Workflow'Access));
       Result.Add_Test (Caller.Create ("authorization policies", Test_Authorization_Policies'Access));
       Result.Add_Test (Caller.Create ("release qualification", Test_Release_Qualification'Access));
+      Result.Add_Test (Caller.Create ("signed release artifacts", Test_Release_Artifacts'Access));
       return Result;
    end Suite;
 end Quality_Manager_Test_Suite;

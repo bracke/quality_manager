@@ -110,14 +110,31 @@ begin
    Require_File ("quality_manager.gpr");
    Require_File ("README.md");
    Require_File ("LICENSE");
+   Require_File ("SECURITY.md");
+   Require_File (".github/CODEOWNERS");
+   Require_File (".github/dependabot.yml");
+   Require_File (".github/dependency-lock.txt");
+   Require_File (".github/workflows/dependency-drift.yml");
    Require_File ("tests/alire.toml");
    Require_File ("tests/quality_manager_tests.gpr");
    Require_File ("schemas/approval-decision-v1.schema.json");
    Require_File ("schemas/release-evidence-v1.schema.json");
+   Require_File ("schemas/release-signature-v1.schema.json");
+   Require_File ("schemas/release-sbom-v1.schema.json");
    Require_File ("docs/release-checklist.md");
+   Require_File ("docs/operations.md");
+   Require_File ("docs/disaster-recovery-drill.md");
+   Require_File ("deploy/systemd/quality-manager.service");
+   Require_File ("deploy/systemd/quality-manager-maintenance.service");
+   Require_File ("deploy/systemd/quality-manager-maintenance.timer");
    Require_File ("coverage/gcov-summary.txt");
    if Ada.Strings.Fixed.Index (Manifest, "[[pins]]") > 0 then
       Fail ("canonical release manifest contains local path pins");
+   end if;
+   if Root /= "" and then Ada.Strings.Fixed.Index
+     (Read_File (Root & "/.github/workflows/ci.yml"), "@main") > 0
+   then
+      Fail ("CI workflow contains a mutable action reference");
    end if;
    if Root /= "" and then Ada.Directories.Exists (Root & "/coverage/gcov-summary.txt") then
       Check_Coverage;

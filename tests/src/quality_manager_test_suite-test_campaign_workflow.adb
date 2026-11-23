@@ -68,6 +68,17 @@ begin
    Assert (Result.Kind = Quality_Manager.Results.Not_Ready,
            "uninitialized campaign state lookup fails closed");
    Quality_Manager.Campaigns.Initialize (Context, Store'Unchecked_Access);
+   Quality_Manager.Storage.Records.Save
+     (Store,
+      Quality_Manager.Storage.Schema.Campaign'
+        (Campaign_Id => To_Unbounded_String ("empty-targets"),
+         Definition_Revision => 1, Definition_Digest => To_Unbounded_String ("digest"),
+         Scope => To_Unbounded_String ("scope"), Baseline => To_Unbounded_String ("baseline"),
+         State => Quality_Manager.Model.Queued, Budget => 1, Used => 0), Result);
+   Quality_Manager.Campaigns.Reconcile (Context, "empty-targets", Result);
+   Assert
+     (Result.Kind = Quality_Manager.Results.Integrity_Error,
+      "campaign reconciliation rejects a durable campaign without current targets");
    declare
       Wrong_Kind : constant Quality_Manager.Storage.Stored_Entity :=
         (Internal_Id => 1, Kind => Quality_Manager.Storage.Project_Record,
@@ -244,6 +255,8 @@ begin
    Quality_Manager.Campaigns.Start (Context, "budgeted", Result);
    Quality_Manager.Campaigns.Record_Execution (Context, "budgeted", Result);
    Assert (Result.Kind = Quality_Manager.Results.Success, "campaign consumes work within its budget");
+   Quality_Manager.Campaigns.Reconcile (Context, "budgeted", Result);
+   Assert (Result.Kind = Quality_Manager.Results.Success, "exhausted unsatisfied campaign reconciles as blocked");
    Quality_Manager.Campaigns.Record_Execution (Context, "budgeted", Result);
    Assert (Result.Kind = Quality_Manager.Results.Authorization_Required,
            "campaign budget exhaustion blocks additional execution");
@@ -257,6 +270,8 @@ begin
      (Context, "applicability", 7, "TST-03", 2, "not-applicable", False, Result);
    Assert (Result.Kind = Quality_Manager.Results.Success,
            "unjustified not-applicable evidence is retained but not satisfied");
+   Quality_Manager.Campaigns.Reconcile (Context, "applicability", Result);
+   Assert (Result.Kind = Quality_Manager.Results.Success, "partially evaluated campaign remains queued");
    Quality_Manager.Campaigns.Update_Target
      (Context, "applicability", 7, "TST-03", 3, "not-applicable", True, Result);
    Assert (Result.Kind = Quality_Manager.Results.Success,

@@ -39,7 +39,8 @@ package Quality_Manager.Integrations.JSON_CLI is
       Output_Limit     : Positive;
       Result           : out Response;
       Discriminator_Name  : String := "";
-      Discriminator_Value : String := "");
+      Discriminator_Value : String := "";
+      Cancelled        : Quality_Manager.Integrations.Processes.Cancellation_Check := null);
    --  Perform Execute.
    --  @param Executable Executable.
    --  @param Arguments Arguments.
@@ -52,4 +53,5 @@ package Quality_Manager.Integrations.JSON_CLI is
    --  @param Result Result.
    --  @param Discriminator_Name Discriminator Name.
    --  @param Discriminator_Value Discriminator Value.
+   --  @param Cancelled Optional cooperative cancellation token.
 end Quality_Manager.Integrations.JSON_CLI;

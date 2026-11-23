@@ -30,6 +30,10 @@ package Quality_Manager.CLI is
       Release_Create_Command,
       Release_Qualify_Command,
       Release_Export_Command,
+      Release_Keygen_Command,
+      Release_Sign_Command,
+      Release_Verify_Command,
+      Release_SBOM_Command,
       Approve_Command,
       Reject_Command);
    --  Command Kind values.
@@ -53,6 +57,10 @@ package Quality_Manager.CLI is
    --  @enum Release_Create_Command Release Create Command.
    --  @enum Release_Qualify_Command Release Qualify Command.
    --  @enum Release_Export_Command Release Export Command.
+   --  @enum Release_Keygen_Command Generate a detached-signing keypair.
+   --  @enum Release_Sign_Command Sign a release artifact.
+   --  @enum Release_Verify_Command Verify a release artifact.
+   --  @enum Release_SBOM_Command Generate a CycloneDX SBOM.
    --  @enum Approve_Command Approve Command.
    --  @enum Reject_Command Reject Command.
    type Output_Format is (Terminal_Output, JSON_Output, Markdown_Output);

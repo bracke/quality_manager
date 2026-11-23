@@ -69,10 +69,15 @@ match. An ambiguous assessment can be adopted only through
 Campaign and release lifecycle commands are listed by `quality-manager help`.
 See `docs/quality-manager.1` for the operator reference.
 
-Phase 11 stabilization passes the 25-test AUnit suite, warnings-as-errors
+Release exports can be accompanied by deterministic CycloneDX SBOMs and detached Ed25519 signatures. Use
+`release-sbom`, `release-keygen`, `release-sign`, and `release-verify`; the signing key remains outside coordinator
+state. Deployment units, backup/restore instructions, and a repeatable recovery exercise are documented in
+`deploy/systemd/`, `docs/operations.md`, and `docs/disaster-recovery-drill.md`.
+
+Phase 11 stabilization passes the 26-test AUnit suite, warnings-as-errors
 validation, and all 33 release-profile indicators. Real maintenance, campaign,
 and release-qualification records are complete. The exact committed candidate
 is qualified by a 33-indicator assessment and an integrity-checked evidence bundle.
-Full-scope production coverage is 7,209/8,007 lines (90.0325%), which passes the
+Full-scope production coverage is 7,589/8,432 lines (90.00%), which passes the
 stabilization threshold. See `docs/release-checklist.md` and
 `docs/implementation-status.md`.
